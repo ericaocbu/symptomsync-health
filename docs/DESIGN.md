@@ -67,7 +67,7 @@
 
 ## Backend Database Schema
 
-![Database Schema](img/db-schema.png)
+![Need to update: Database Schema](img/db-schema.png)
 
 **Database Schema Overview**
 
@@ -85,14 +85,6 @@
 
 5. **File Uploads**:  
    The `files` table stores metadata for user-uploaded documents such as PDFs, images, or lab reports. Each file entry contains details like filename, URL (pointing to Supabase Storage), file type, and upload timestamp, all tied back to the corresponding user profile.
-
-6. **AI-Powered Analysis**:  
-   The `ai_analysis` table captures results from the AI-driven symptom analysis feature. Each analysis entry includes the analysis result, a link to the specific health log entry it pertains to, and the associated user profile. This ensures that AI insights are directly tied to the user’s logged data.
-
-7. **Chatbot Conversations**:  
-   The schema supports AI-powered chatbot interactions with two tables:
-   - `chatbot_conversations` represents an entire session between the user and the chatbot AI, storing the session’s start time and the associated user profile.
-   - `chatbot_messages` logs individual messages exchanged during the conversation, indicating whether the sender is the user or the AI, and linking each message back to both the conversation session and the user profile.
 
 ---
 
