@@ -28,15 +28,15 @@
 
 ---
 
-### Feature 3: Medication Reminders & Calendar Sync
+### Feature 3: Medication & Appointment Reminders
 
-**Description:** A system that notifies users when it’s time to take their medication and synchronizes their medication schedule with their digital calendar.
+**Description:** A system that notifies users for upcoming appointments or medication timing.
 
-**User(s):** Users who require regular medication and benefit from automated reminders and calendar integration.
+**User(s):** Users who require regular medication and benefit from automated reminders about medications and appointments.
 
-**Purpose:** To help users adhere to their medication schedules and reduce the risk of missed doses, while integrating seamlessly with their existing digital calendars.
+**Purpose:** To help users adhere to their medication schedules and reduce the risk of missed doses or appointments.
 
-**Technical Notes:** Medication reminders will be triggered using client-side timers or on-demand checks when users log in. The calendar sync feature will interface with third-party APIs (such as Google Calendar or Outlook) and securely store sync tokens in the user’s profile. All interactions will be authenticated through Supabase Auth.
+**Technical Notes:** Medication reminders will be triggered using client-side timers or on-demand checks when users log in. Appointment reminders will be fetched at login or on-demand (refresh).
 
 ---
 
@@ -96,6 +96,6 @@ _Replace this with an embedded Figma project here._ (TODO)
 
 ### Project Idea Summary
 
-**SymptomSync** is a personal health‑journal web app where users log their daily symptoms, medications, doctor visits/appointments, vitals, and mood. The app generates interactive health trend charts based on user logs, sends medication reminders, and syncs with digital calendars. It also features a peer‑support chat for connecting individuals facing similar conditions, allowing them to share emotional support and resources. Users can upload and store PDF health documents in one centralized location and export shareable health reports. Implementation plans also include AI-powered features such as a health Q&A chatbot and AI analysis of user health records.
+**SymptomSync** is a personal health‑journal web app where users log their daily symptoms, medications, doctor visits/appointments, vitals, and mood. The app generates interactive health trend charts based on user logs and sends reminders about medications and appointments. It also features a peer‑support chat for connecting individuals facing similar conditions, allowing them to share emotional support and resources. Users can upload and store PDF health documents in one centralized location and export shareable health reports.
 
 ---
