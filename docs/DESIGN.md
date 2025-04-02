@@ -54,7 +54,7 @@
 
 ### Feature 5: Document Upload & Health Report Export
 
-**Description:** A feature allowing users to upload PDF health documents (e.g., doctor notes, lab results, prescriptions) and export consolidated health reports.
+**Description:** A feature allowing users to upload PDF health documents (e.g., doctor notes, lab results, prescriptions) and export summaries of symptoms logged on site.
 
 **User(s):** Users who need to maintain organized records of their health documents and share detailed health reports with their healthcare providers.
 
