@@ -64,21 +64,6 @@
 
 ---
 
-### Feature 6: AI-Powered Symptom Analysis
-
-**Description:** An AI-driven tool that processes user-entered symptom data to provide personalized insights, trend interpretations, and potential recommendations, possibly through a chatbot interface, and other AI popup suggestions.
-
-**User(s):** Users seeking deeper insights into their health logs who can benefit from AI suggestions to better understand symptom patterns or potential triggers.
-
-**Purpose:** To enhance the value of logged data by leveraging AI (e.g., Google Gemini API) for analysis, which offers data-driven insights that help users detect early warning signs and understand correlations between different health factors. This allows users to make more informed decisions and have productive discussions with their healthcare providers.
-
-**Technical Notes:**
-
-- **LLM Integration:** The backend will integrate with the Google Gemini API to analyze user logs on demand.
-- **Result Presentation:** Analysis results are displayed as summaries, visual insights, or recommendations directly on the user dashboard.
-- **Disclaimers:** Clear notices indicate that the AI analysis is for informational purposes only and should not replace professional medical advice.
-
----
 
 ## Backend Database Schema
 
