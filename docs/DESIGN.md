@@ -67,7 +67,7 @@
 
 ## Backend Database Schema
 
-![Database Schema](img/supabase-schema-pybcritybnehxwvkakzn(1).png)
+![Database Schema](img/db-schema.png)
 
 **Database Schema Overview**
 
@@ -90,7 +90,7 @@
 
 ## High-Fidelity Prototype
 
-_Replace this with an embedded Figma project here._ (TODO)
+Link to Figma prototype: [SymptomSync Figma Prototype](https://www.figma.com/design/YwoQ1OgAPYOfFOwlbf3aP0/COMP-426-Final-Project-Prototype?node-id=2-287&t=yC99fAWyYGJEOY3N-1)
 
 ---
 
