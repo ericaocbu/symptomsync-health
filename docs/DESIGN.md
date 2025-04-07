@@ -67,7 +67,7 @@
 
 ## Backend Database Schema
 
-![Need to update: Database Schema](img/db-schema.png)
+![Database Schema](img/docs/img/supabase-schema-pybcritybnehxwvkakzn(1).png)
 
 **Database Schema Overview**
 
