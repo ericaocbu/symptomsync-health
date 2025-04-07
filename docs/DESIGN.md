@@ -67,7 +67,7 @@
 
 ## Backend Database Schema
 
-![Database Schema](img/supabase-schema-pybcritybnehxwvkakzn (1).png)
+![Database Schema](img/supabase-schema-pybcritybnehxwvkakzn(1).png)
 
 **Database Schema Overview**
 
