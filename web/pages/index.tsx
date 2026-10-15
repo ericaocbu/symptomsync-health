@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import type { User } from "@supabase/supabase-js";
 import { Inter } from "next/font/google";
 import Link from "next/link";
 import Head from "next/head";
