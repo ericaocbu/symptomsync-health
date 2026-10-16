@@ -602,9 +602,9 @@ export default function Home() {
                   <HeartPulse size={27} />
                 </span>
                 <h2 className="mt-6 text-3xl font-semibold leading-tight tracking-[-0.04em] sm:text-5xl">
-                  A clearer picture
+                  See your health
                   <br />
-                  starts with today.
+                  clearly today!
                 </h2>
                 <p className="mx-auto mt-5 max-w-lg leading-7 text-white/75">
                   Give your health information a home and take the next step at
