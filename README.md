@@ -6,7 +6,7 @@ Build with patient care in mind, SymptomSync is a web application designed to he
 
 ![TypeScript](https://img.shields.io/badge/-TypeScript-05122A?style=flat&logo=typescript) ![Next.js](https://img.shields.io/badge/-Next.js-05122A?style=flat&logo=nextdotjs) ![Shadcn/ui](https://img.shields.io/badge/-Shadcn_UI-05122A?style=flat&logo=shadcnui) ![TailwindCSS](https://img.shields.io/badge/-TailwindCSS-05122A?style=flat&logo=tailwindcss) ![Supabase](https://img.shields.io/badge/-Supabase-05122A?style=flat&logo=supabase) ![Framer Motion](https://img.shields.io/badge/-Framer_Motion-05122A?style=flat&logo=framer) ![Chart.js](https://img.shields.io/badge/-Chart.js-05122A?style=flat&logo=chartdotjs) ![React](https://img.shields.io/badge/-React-05122A?style=flat&logo=react) ![Vercel](https://img.shields.io/badge/-Vercel-05122A?style=flat&logo=vercel) ![Google AI](https://img.shields.io/badge/-Google_AI-05122A?style=flat&logo=google)
 
-Currently live on Vercel at [https://symptomsync.vercel.app](https://symptomsync.vercel.app)! 🚀
+Currently live on Vercel at [https://symptomsync-health.vercel.app](https://symptomsync-health.vercel.app)! 🚀
 
 ---
 
@@ -245,6 +245,9 @@ A big thank you to our team members for their hard work and dedication:
 ## Video Demo
 
 Check out our demo video showcasing the app's features and functionality: [Link to Demo Video](https://drive.google.com/file/d/1DKOIBnTep6rMrOBSRWPVhk2s8g8uIYef/view?usp=sharing)
+
+> [!TIP]
+> This video might not be comprehensive and cover all features of our app - so please feel free to give our live app at [symptomsync-health.vercel.app](https://symptomsync-health.vercel.app) a try to test out all the features!
 
 <p align="center">
   <a href="https://drive.google.com/file/d/1DKOIBnTep6rMrOBSRWPVhk2s8g8uIYef/view?usp=sharing" target="_blank">
