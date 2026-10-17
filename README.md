@@ -14,6 +14,12 @@ Currently live on Vercel at [https://symptomsync-health.vercel.app](https://symp
 
 The UI of the app was designed with Figma and Tailwind CSS. The design is responsive and mobile-first, ensuring a seamless experience across devices. Below are some screenshots of the app in action:
 
+### Landing Page
+
+<p align="center">
+  <img src="docs/img/landing.png" alt="Landing Page Screenshot" width="100%"/>
+</p>
+
 ### Home Dashboard
 
 <p align="center">
