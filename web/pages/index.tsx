@@ -550,10 +550,10 @@ export default function Home() {
                   Good to know
                 </p>
                 <h2 className="mt-4 text-4xl font-semibold tracking-[-0.04em] sm:text-5xl">
-                  Questions?
+                  Frequently
                   <br />
                   <span className="font-normal italic text-[#718b9b]">
-                    Start here.
+                    Asked Questions
                   </span>
                 </h2>
                 <p className="mt-5 max-w-sm leading-7 text-[#737d83]">
