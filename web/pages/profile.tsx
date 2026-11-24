@@ -26,11 +26,8 @@ import {
   Tag,
   CalendarDays,
   Loader2,
-  ArrowLeft,
   Mail,
   UserRound,
-  HeartPulse,
-  Camera,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -56,7 +53,7 @@ export default function ProfilePage() {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
 
-  const broadcastChannelRef = useRef<any>(null);
+  const broadcastChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   // Load current user's profile
   useQuery({
@@ -124,7 +121,7 @@ export default function ProfilePage() {
       broadcastChannelRef.current = channel;
 
       channel
-        .on("broadcast", { event: "*" }, (payload: any) => {
+        .on("broadcast", { event: "*" }, (payload: { payload: { message?: string } }) => {
           const message = payload?.payload?.message;
 
           if (message) {
