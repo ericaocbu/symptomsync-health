@@ -1,8 +1,12 @@
+
 import { useState, useEffect, ChangeEvent, useRef } from "react";
 import { useRouter } from "next/router";
 import { useQuery } from "@tanstack/react-query";
-import { motion } from "framer-motion";
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import {
+  Avatar,
+  AvatarImage,
+  AvatarFallback,
+} from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -14,17 +18,19 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card } from "@/components/ui/card";
 import {
   User,
-  Search,
   Trash2,
   Edit,
   UploadCloud,
   Tag,
   CalendarDays,
   Loader2,
-  ChevronLeft,
+  ArrowLeft,
+  Mail,
+  UserRound,
+  HeartPulse,
+  Camera,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -32,204 +38,213 @@ import {
   updateProfile,
   uploadAvatar,
   removeAvatar,
-  searchProfiles,
   type Profile,
 } from "@/lib/profile";
 import { supabase } from "@/lib/supabaseClient";
 import Head from "next/head";
 
-// A simple debounce hook to limit frequent search calls
-function useDebounce<T>(value: T, delay: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const handler = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(handler);
-  }, [value, delay]);
-  return debounced;
-}
-
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.1, delayChildren: 0.2 },
-  },
-};
-
-const slideInLeft = {
-  hidden: { opacity: 0, x: -50 },
-  visible: { opacity: 1, x: 0, transition: { duration: 0.6, ease: "easeOut" } },
-};
-
-const fadeInUp = {
-  hidden: { opacity: 0, y: 20 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: "easeOut" } },
-};
-
 export default function ProfilePage() {
   const router = useRouter();
+
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [profileLoading, setProfileLoading] = useState(false);
+
   const [fullName, setFullName] = useState("");
   const [conditionTags, setConditionTags] = useState("");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<Profile[]>([]);
-  const debouncedSearchQuery = useDebounce(searchQuery, 500);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null);
-  const profileToDisplay = selectedProfile || profile;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   const broadcastChannelRef = useRef<any>(null);
 
+  // Load current user's profile
   useQuery({
     queryKey: ["profile"],
     queryFn: async () => {
-      const {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        data: { user },
-      } = await supabase.auth.getUser();
-      const data = await getCurrentProfile();
-      if (!data) {
-        router.push("/auth/login");
-        return null;
-      }
-      setProfile(data);
-      setFullName(data.full_name || data.email);
-      setConditionTags((data.condition_tags || []).join(", "));
-      setLoading(false);
-      return data;
-    },
-    enabled: true,
-  });
-
-  useQuery({
-    queryKey: ["profileSearch", debouncedSearchQuery],
-    queryFn: async () => {
-      if (debouncedSearchQuery.trim() === "") {
-        setSearchResults([]);
-        return [];
-      }
-      setSearchLoading(true);
-      try {
-        const results = await searchProfiles(debouncedSearchQuery.trim());
-        setSearchResults(results);
-        return results;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } catch (error: any) {
-        toast.error("Error searching profiles: " + error.message);
-        return [];
-      } finally {
-        setSearchLoading(false);
-      }
-    },
-    enabled: true,
-  });
-
-  useEffect(() => {
-    async function subscribeToUserChannel() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
 
       if (!user) {
         router.push("/auth/login");
+        return null;
+      }
+
+      const data = await getCurrentProfile();
+
+      if (!data) {
+        router.push("/auth/login");
+        return null;
+      }
+
+      setProfile(data);
+      setFullName(data.full_name || "");
+      setConditionTags((data.condition_tags || []).join(", "));
+      setLoading(false);
+
+      return data;
+    },
+  });
+
+  // Generate and clean up avatar preview
+  useEffect(() => {
+    if (!avatarFile) {
+      setAvatarPreview(null);
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(avatarFile);
+    setAvatarPreview(previewUrl);
+
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [avatarFile]);
+
+  // Subscribe to user-specific notifications
+  useEffect(() => {
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let cancelled = false;
+
+    async function subscribeToUserChannel() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (cancelled) return;
+
+      if (!user) {
+        router.push("/auth/login");
         return;
       }
 
-      const userChannelName = `user-channel-${user.id}`;
-      broadcastChannelRef.current = supabase.channel(userChannelName, {
+      channel = supabase.channel(`user-channel-${user.id}`, {
         config: { broadcast: { self: false } },
       });
-      const channel = broadcastChannelRef.current;
+
+      broadcastChannelRef.current = channel;
 
       channel
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .on("broadcast", { event: "*" }, (payload: any) => {
-          toast.success(
-            `Notification: ${payload.payload.message.replace(/\./g, "")} from another device or tab.`,
-          );
+          const message = payload?.payload?.message;
+
+          if (message) {
+            toast.success(
+              `Notification: ${message.replace(/\./g, "")} from another device or tab.`
+            );
+          }
         })
-        .subscribe((status: string) => {
+        .subscribe((status) => {
           console.log("User-specific channel status:", status);
         });
-
-      return () => {
-        supabase.removeChannel(channel);
-        broadcastChannelRef.current = null;
-      };
     }
 
     subscribeToUserChannel();
+
+    return () => {
+      cancelled = true;
+
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+
+      broadcastChannelRef.current = null;
+    };
   }, [router]);
 
-  /**
-   * Handles the change event for the avatar file input
-   *
-   * @param e - The change event from the file input
-   */
+  // Handle avatar selection
   const handleAvatarChange = (e: ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setAvatarFile(e.target.files[0]);
+    const file = e.target.files?.[0];
+
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select an image file.");
+      return;
     }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image must be smaller than 5MB.");
+      return;
+    }
+
+    setAvatarFile(file);
   };
 
-  /**
-   * Handles the form submission to update the profile
-   *
-   * @param e - The form event
-   */
-  const handleUpdateProfile = async (e: React.FormEvent) => {
+  // Update profile
+  const handleUpdateProfile = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
     setProfileLoading(true);
+
     try {
       let avatar_url = profile?.avatar_url || null;
+
       if (avatarFile) {
         avatar_url = await uploadAvatar(avatarFile);
       }
+
       const tagsArray = conditionTags
         .split(",")
         .map((tag) => tag.trim())
-        .filter((tag) => tag);
+        .filter(Boolean);
+
       const updatedProfile = await updateProfile({
-        full_name: fullName,
+        full_name: fullName.trim(),
         avatar_url,
         condition_tags: tagsArray,
       });
+
+      if (!updatedProfile) {
+        toast.error("Failed to update your profile. Please try again.");
+        return;
+      }
+
       setProfile(updatedProfile);
-      toast.success("Profile updated successfully!");
       setEditDialogOpen(false);
+      toast.success("Profile updated successfully.");
+
+      setProfile(updatedProfile);
+      setFullName(updatedProfile.full_name || "");
+      setConditionTags((updatedProfile.condition_tags || []).join(", "));
       setAvatarFile(null);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (error: any) {
-      toast.error("Error updating profile: " + error.message);
+      setEditDialogOpen(false);
+
+      toast.success("Profile updated successfully!");
+    } catch (error: unknown) {
+      toast.error(
+        "Error updating profile: " +
+          (error instanceof Error ? error.message : "Please try again.")
+      );
     } finally {
       setProfileLoading(false);
     }
   };
 
-  /**
-   * Handles the removal of the avatar
-   */
+  // Remove avatar
   const handleRemoveAvatar = async () => {
+    if (!profile?.avatar_url) return;
+
     setProfileLoading(true);
+
     try {
       await removeAvatar();
+
       const updatedProfile = await updateProfile({
         full_name: fullName,
         avatar_url: null,
-        condition_tags: profile?.condition_tags,
+        condition_tags: profile.condition_tags,
       });
-      setProfile(updatedProfile);
-      toast.success("Avatar removed successfully!");
 
-      window.location.reload();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (error: any) {
-      toast.error("Error removing avatar: " + error.message);
+      setProfile(updatedProfile);
+      setAvatarFile(null);
+      setAvatarPreview(null);
+
+      toast.success("Profile photo removed.");
+    } catch (error: unknown) {
+      toast.error(
+        "Error removing avatar: " +
+          (error instanceof Error ? error.message : "Please try again.")
+      );
     } finally {
       setProfileLoading(false);
     }
@@ -237,291 +252,408 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="animate-spin h-12 w-12 text-primary" />
+      <div className="flex min-h-screen items-center justify-center bg-[#f7f8f8]">
+        <Loader2 className="h-9 w-9 animate-spin text-[#405f73]" />
       </div>
     );
   }
 
+  if (!profile) return null;
+
+  const displayName = profile.full_name || "Your Profile";
+  const initials = (profile.full_name || profile.email || "U")
+    .split(" ")
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+  const joinedDate = profile.created_at
+    ? new Date(profile.created_at).toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      })
+    : "Not available";
+
   return (
     <>
       <Head>
-        <title>
-          SymptomSync |{" "}
-          {profileToDisplay?.id === profile?.id
-            ? "Your Profile"
-            : `Viewing ${profileToDisplay?.full_name || profileToDisplay?.email}'s Profile`}{" "}
-        </title>
-        <meta name="description" content="View and update your profile" />
+        <title>SymptomSync | Your Profile</title>
+        <meta
+          name="description"
+          content="View and manage your SymptomSync profile."
+        />
       </Head>
 
-      <div className="min-h-screen bg-background text-foreground p-4 sm:p-6">
-        <style jsx global>{`
-          html {
-            scroll-behavior: smooth;
-          }
+      <main className="min-h-screen bg-[#f7f8f8] text-[#27333b]">
+        <div className="mx-auto max-w-5xl px-5 py-8 sm:px-8 sm:py-12">
 
-          html,
-          body {
-            overscroll-behavior: none;
-          }
-        `}</style>
-        <motion.div
-          variants={containerVariants}
-          initial="hidden"
-          animate="visible"
-          className="max-w-4xl mx-auto space-y-8 pt-2 bg-background"
-        >
-          <motion.header
-            variants={slideInLeft}
-            className="text-center md:text-left"
-          >
-            <h1 className="text-3xl text-foreground font-bold">
-              {profileToDisplay?.id === profile?.id
-                ? "Your Profile 🙋‍♂️"
-                : `Viewing ${profileToDisplay?.full_name || profileToDisplay?.email}'s Profile 🧐`}
-            </h1>
-            <p className="text-lg text-foreground mt-1">
-              {profileToDisplay?.email}
+          {/* Page heading */}
+          <div className="mb-9">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[2px] text-[#718b9b]">
+              Account settings
             </p>
-          </motion.header>
 
-          <motion.div variants={fadeInUp} className="mb-8">
-            <div className="relative">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-3">
-                <Search className="h-5 w-5 text-gray-400" />
-              </span>
-              <Input
-                placeholder="Search profiles by name or email…"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setSelectedProfile(null);
-                }}
-                className="pl-10 pr-4 py-2 w-full rounded-md border border-gray-300 cursor-pointer"
-              />
-              {searchLoading && (
-                <span className="absolute inset-y-0 right-0 flex items-center pr-3">
-                  <Loader2 className="animate-spin h-5 w-5 text-gray-400" />
+            <h1 className="text-3xl font-semibold tracking-[-1.3px] sm:text-4xl">
+              Your profile
+            </h1>
+
+            <p className="mt-3 max-w-xl text-sm leading-6 text-[#69747b]">
+              Manage your personal information and the details associated
+              with your account.
+            </p>
+          </div>
+
+          {/* Profile overview */}
+          <section className="overflow-hidden rounded-[26px] border border-[#e4e8e9] bg-white shadow-[0_8px_35px_rgba(39,51,59,0.035)]">
+
+            {/* Profile banner */}
+            <div className="h-28 bg-[#e6edf2] sm:h-36">
+              <div className="flex h-full items-center justify-end px-6">
+                <span className="text-xs font-medium tracking-wide text-[#718b9b]">
+                  PERSONAL PROFILE
                 </span>
-              )}
-            </div>
-            {searchResults.length > 0 && (
-              <motion.ul
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mt-2 border border-gray-300 rounded-md p-2 max-h-60 overflow-y-auto bg-white text-gray-900 shadow-lg"
-              >
-                {searchResults.slice(0, 5).map((usr) => (
-                  <motion.li
-                    key={usr.id}
-                    className="p-2 cursor-pointer flex items-center space-x-3 rounded hover:bg-gray-200 transition-colors"
-                    onClick={() => {
-                      setSelectedProfile(usr);
-                      setSearchQuery("");
-                      setSearchResults([]);
-                    }}
-                  >
-                    <Avatar className="w-8 h-8">
-                      {usr.avatar_url ? (
-                        <AvatarImage
-                          src={usr.avatar_url}
-                          alt={usr.full_name || usr.email}
-                        />
-                      ) : (
-                        <AvatarFallback>
-                          <User className="w-5 h-5 text-foreground" />
-                        </AvatarFallback>
-                      )}
-                    </Avatar>
-                    <span className="font-medium truncate">
-                      {usr.full_name || usr.email}
-                    </span>
-                  </motion.li>
-                ))}
-              </motion.ul>
-            )}
-          </motion.div>
-
-          <motion.div variants={fadeInUp}>
-            <Card className="p-6 flex flex-col sm:flex-row items-center shadow-2xl rounded-xl bg-background gap-0 overflow-hidden">
-              <Avatar className="ml-2 w-24 h-24">
-                {profileToDisplay?.avatar_url ? (
-                  <AvatarImage
-                    src={profileToDisplay.avatar_url}
-                    alt={profileToDisplay.full_name || profileToDisplay.email}
-                  />
-                ) : (
-                  <AvatarFallback>
-                    <User className="w-10 h-10" />
-                  </AvatarFallback>
-                )}
-              </Avatar>
-              <div className="mt-4 sm:mt-0 sm:ml-6 flex-1 text-left w-full">
-                <h2 className="text-3xl font-bold truncate">
-                  {profileToDisplay?.full_name || "Unnamed User"}
-                </h2>
-                <p className="text-md text-foreground truncate">
-                  {profileToDisplay?.email}
-                </p>
-                <p className="text-sm text-foreground flex items-center mt-1 truncate">
-                  <CalendarDays className="w-4 h-4 mr-1" /> Joined:{" "}
-                  {profileToDisplay?.created_at
-                    ? new Date(profileToDisplay.created_at).toLocaleDateString()
-                    : "N/A"}
-                </p>
-                {(profileToDisplay?.condition_tags || []).length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {(profileToDisplay?.condition_tags || []).map(
-                      (tag, idx) => (
-                        <span
-                          key={idx}
-                          className="px-3 py-1 bg-secondary text-background rounded-full text-xs flex items-center truncate"
-                        >
-                          <Tag className="w-4 h-4 mr-1" /> {tag}
-                        </span>
-                      ),
-                    )}
-                  </div>
-                )}
               </div>
-              {profileToDisplay?.id === profile?.id && (
-                <div className="mt-4 sm:mt-0">
-                  <Button
-                    variant="outline"
-                    className="cursor-pointer"
-                    onClick={() => setEditDialogOpen(true)}
-                  >
-                    <Edit className="mr-2 w-4 h-4" /> Edit Profile
-                  </Button>
-                </div>
-              )}
-            </Card>
+            </div>
 
-            {profileToDisplay?.id !== profile?.id && (
-              <div className="mt-4 flex justify-center items-center">
+            <div className="px-6 pb-7 sm:px-9 sm:pb-9">
+              <div className="-mt-12 flex flex-col gap-5 sm:-mt-14 sm:flex-row sm:items-end sm:justify-between">
+
+                {/* Avatar and name */}
+                <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-end">
+                  <Avatar className="h-24 w-24 border-4 border-white bg-[#e6edf2] shadow-sm sm:h-28 sm:w-28">
+                    {profile.avatar_url ? (
+                      <AvatarImage
+                        src={profile.avatar_url}
+                        alt={displayName}
+                      />
+                    ) : (
+                      <AvatarFallback className="bg-[#e6edf2] text-[#405f73]">
+                        <span className="text-2xl font-semibold">
+                          {initials}
+                        </span>
+                      </AvatarFallback>
+                    )}
+                  </Avatar>
+
+                  <div className="pb-1">
+                    <h2 className="max-w-full truncate text-2xl font-semibold tracking-[-0.8px] sm:text-3xl">
+                      {displayName}
+                    </h2>
+
+                    <p className="mt-1 text-sm text-[#69747b]">
+                      {profile.email}
+                    </p>
+                  </div>
+                </div>
+
                 <Button
-                  variant="outline"
-                  className="mt-4 cursor-pointer"
-                  onClick={() => {
-                    setSelectedProfile(null);
-                    setSearchQuery("");
-                  }}
+                  type="button"
+                  onClick={() => setEditDialogOpen(true)}
+                  className="h-10 w-full rounded-full bg-[#405f73] px-5 text-sm font-medium text-white transition-colors hover:bg-[#324e60] sm:mb-1 sm:w-auto"
                 >
-                  <ChevronLeft className="mr-2 w-4 h-4" /> Back to Your Profile
+                  <Edit className="mr-2 h-4 w-4" />
+                  Edit profile
                 </Button>
               </div>
-            )}
-          </motion.div>
 
-          {profileToDisplay?.id === profile?.id && (
-            <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-              <DialogContent className="bg-background p-8 rounded-xl shadow-2xl max-w-lg mx-auto">
-                <DialogHeader>
-                  <DialogTitle className="text-foreground">
-                    Edit Your Profile
-                  </DialogTitle>
-                  <DialogDescription className="text-foreground">
-                    Update your full name, avatar, and condition tags.
-                  </DialogDescription>
-                </DialogHeader>
-                <form onSubmit={handleUpdateProfile} className="space-y-6 mt-4">
-                  <div className="flex flex-col sm:flex-row items-center gap-4">
-                    <Avatar className="w-16 h-16">
-                      {avatarFile ? (
+              <div className="my-8 border-t border-[#e9edef]" />
+
+              {/* Profile details */}
+              <div>
+                <div className="mb-5">
+                  <h3 className="text-base font-semibold tracking-tight">
+                    Personal information
+                  </h3>
+                  <p className="mt-1 text-sm text-[#89949a]">
+                    Your account details and profile information.
+                  </p>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+
+                  {/* Email */}
+                  <div className="flex items-start gap-4 rounded-2xl border border-[#e9edef] bg-[#fcfcfc] p-4">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#e6edf2] text-[#587587]">
+                      <Mail size={19} />
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-[#89949a]">
+                        Email address
+                      </p>
+                      <p className="mt-1 break-all text-sm font-medium text-[#35434c]">
+                        {profile.email}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Join date */}
+                  <div className="flex items-start gap-4 rounded-2xl border border-[#e9edef] bg-[#fcfcfc] p-4">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#e9ebf2] text-[#69758a]">
+                      <CalendarDays size={19} />
+                    </div>
+
+                    <div>
+                      <p className="text-xs font-medium text-[#89949a]">
+                        Member since
+                      </p>
+                      <p className="mt-1 text-sm font-medium text-[#35434c]">
+                        {joinedDate}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Full name */}
+                  <div className="flex items-start gap-4 rounded-2xl border border-[#e9edef] bg-[#fcfcfc] p-4">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#f1ece5] text-[#8b7865]">
+                      <UserRound size={19} />
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-[#89949a]">
+                        Full name
+                      </p>
+                      <p className="mt-1 truncate text-sm font-medium text-[#35434c]">
+                        {profile.full_name || "Not provided"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Profile status */}
+                  <div className="flex items-start gap-4 rounded-2xl border border-[#e9edef] bg-[#fcfcfc] p-4">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#e6edf2] text-[#587587]">
+                      <User size={19} />
+                    </div>
+
+                    <div>
+                      <p className="text-xs font-medium text-[#89949a]">
+                        Account
+                      </p>
+                      <p className="mt-1 text-sm font-medium text-[#35434c]">
+                        Active profile
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Conditions */}
+              <div className="mt-9 border-t border-[#e9edef] pt-7">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-semibold tracking-tight">
+                      Health conditions
+                    </h3>
+                    <p className="mt-1 text-sm text-[#89949a]">
+                      Conditions you've added to your profile.
+                    </p>
+                  </div>
+
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#e6edf2] text-[#587587]">
+                    <Tag size={19} />
+                  </div>
+                </div>
+
+                {profile.condition_tags && profile.condition_tags.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {profile.condition_tags.map((tag, index) => (
+                      <span
+                        key={`${tag}-${index}`}
+                        className="inline-flex items-center gap-2 rounded-full border border-[#dce4e8] bg-[#f4f7f8] px-4 py-2 text-sm font-medium text-[#587587]"
+                      >
+                        <Tag size={14} />
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-[#dce2e5] bg-[#fcfcfc] px-5 py-7 text-center">
+                    <Tag className="mx-auto mb-3 h-6 w-6 text-[#a0adb4]" />
+
+                    <p className="text-sm font-medium text-[#58656d]">
+                      No conditions added yet
+                    </p>
+
+                    <p className="mt-1 text-xs text-[#89949a]">
+                      You can add health conditions when editing your profile.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* Edit profile dialog */}
+          <Dialog
+            open={editDialogOpen}
+            onOpenChange={(open) => {
+              if (!profileLoading) {
+                setEditDialogOpen(open);
+
+                if (!open) {
+                  setFullName(profile.full_name || "");
+                  setConditionTags(
+                    (profile.condition_tags || []).join(", ")
+                  );
+                  setAvatarFile(null);
+                }
+              }
+            }}
+          >
+            <DialogContent className="max-h-[90vh] overflow-y-auto rounded-[24px] border border-[#e4e8e9] bg-white p-6 shadow-xl sm:max-w-lg sm:p-8">
+              <DialogHeader>
+                <p className="text-xs font-semibold uppercase tracking-[2px] text-[#718b9b]">
+                  Account settings
+                </p>
+
+                <DialogTitle className="text-2xl font-semibold tracking-tight text-[#27333b]">
+                  Edit your profile
+                </DialogTitle>
+
+                <DialogDescription className="text-sm leading-6 text-[#69747b]">
+                  Update your personal information and profile photo.
+                </DialogDescription>
+              </DialogHeader>
+
+              <form onSubmit={handleUpdateProfile} className="mt-5 space-y-6">
+
+                {/* Avatar editor */}
+                <div className="rounded-2xl border border-[#e9edef] bg-[#fcfcfc] p-4">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                    <Avatar className="h-20 w-20 border border-[#e4e8e9]">
+                      {avatarPreview || profile.avatar_url ? (
                         <AvatarImage
-                          src={URL.createObjectURL(avatarFile)}
-                          alt="New Avatar"
-                        />
-                      ) : profileToDisplay?.avatar_url ? (
-                        <AvatarImage
-                          src={profileToDisplay.avatar_url}
-                          alt={
-                            profileToDisplay.full_name || profileToDisplay.email
-                          }
+                          src={avatarPreview || profile.avatar_url || ""}
+                          alt="Profile preview"
                         />
                       ) : (
-                        <AvatarFallback>
-                          <User className="w-8 h-8" />
+                        <AvatarFallback className="bg-[#e6edf2] text-[#405f73]">
+                          <span className="text-xl font-semibold">
+                            {initials}
+                          </span>
                         </AvatarFallback>
                       )}
                     </Avatar>
-                    <div className="flex-1">
+
+                    <div className="min-w-0 flex-1">
                       <Label
                         htmlFor="avatar"
-                        className="mb-1 block text-foreground"
+                        className="mb-2 block text-sm font-semibold text-[#35434c]"
                       >
-                        Change Avatar
+                        Profile photo
                       </Label>
+
                       <Input
-                        type="file"
                         id="avatar"
+                        type="file"
                         accept="image/*"
                         onChange={handleAvatarChange}
-                        className="border border-gray-300 rounded-md p-0 pl-2 h-8 flex items-center hover:bg-background cursor-pointer"
+                        className="h-auto cursor-pointer rounded-xl border-[#dce2e5] bg-white p-2 text-xs text-[#69747b] file:mr-3 file:rounded-lg file:border-0 file:bg-[#e6edf2] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-[#405f73] hover:file:bg-[#dce7ed]"
                       />
-                      {profileToDisplay?.avatar_url && !avatarFile && (
-                        <Button
-                          variant="destructive"
-                          onClick={handleRemoveAvatar}
-                          className="mt-2 w-full sm:w-auto cursor-pointer"
-                        >
-                          <Trash2 className="mr-1 w-4 h-4" /> Remove Avatar
-                        </Button>
-                      )}
+
+                      <p className="mt-2 text-xs text-[#89949a]">
+                        JPG, PNG, or another image format. Maximum 5MB.
+                      </p>
                     </div>
                   </div>
-                  <div>
-                    <Label htmlFor="fullName" className="mb-2 text-foreground">
-                      Full Name
-                    </Label>
-                    <Input
-                      id="fullName"
-                      type="text"
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      placeholder="Enter your full name"
-                      className="w-full border border-gray-300 rounded-md p-2 cursor-pointer pl-4"
-                    />
-                  </div>
-                  <div>
-                    <Label
-                      htmlFor="conditionTags"
-                      className="mb-2 text-foreground"
-                    >
-                      Conditions (comma separated)
-                    </Label>
-                    <Input
-                      id="conditionTags"
-                      type="text"
-                      value={conditionTags}
-                      onChange={(e) => setConditionTags(e.target.value)}
-                      placeholder="e.g., Diabetes, Hypertension"
-                      className="w-full border border-gray-300 rounded-md p-2 cursor-pointer pl-4"
-                    />
-                  </div>
-                  <DialogFooter className="mt-6 flex justify-end gap-4">
-                    <Button
-                      variant="outline"
+
+                  {profile.avatar_url && !avatarFile && (
+                    <button
                       type="button"
-                      onClick={() => setEditDialogOpen(false)}
-                      className="hover:scale-105 transition-transform cursor-pointer"
+                      disabled={profileLoading}
+                      onClick={handleRemoveAvatar}
+                      className="mt-4 inline-flex items-center gap-2 text-xs font-medium text-[#a35c5c] transition-colors hover:text-[#843e3e] disabled:opacity-50"
                     >
-                      Cancel
-                    </Button>
-                    <Button
-                      type="submit"
-                      className="hover:scale-105 transition-transform cursor-pointer"
-                    >
-                      <UploadCloud className="mr-2 w-4 h-4" /> Save Changes
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
-          )}
-        </motion.div>
-      </div>
+                      <Trash2 size={14} />
+                      Remove profile photo
+                    </button>
+                  )}
+                </div>
+
+                {/* Name */}
+                <div>
+                  <Label
+                    htmlFor="fullName"
+                    className="mb-2 block text-sm font-medium text-[#35434c]"
+                  >
+                    Full name
+                  </Label>
+
+                  <Input
+                    id="fullName"
+                    type="text"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="Enter your full name"
+                    className="h-11 rounded-xl border-[#dce2e5] bg-[#fcfcfc] px-4 text-sm focus-visible:border-[#718b9b] focus-visible:ring-2 focus-visible:ring-[#718b9b]/20"
+                  />
+                </div>
+
+                {/* Conditions */}
+                <div>
+                  <Label
+                    htmlFor="conditionTags"
+                    className="mb-2 block text-sm font-medium text-[#35434c]"
+                  >
+                    Health conditions
+                  </Label>
+
+                  <Input
+                    id="conditionTags"
+                    type="text"
+                    value={conditionTags}
+                    onChange={(e) => setConditionTags(e.target.value)}
+                    placeholder="e.g., Asthma, Diabetes"
+                    className="h-11 rounded-xl border-[#dce2e5] bg-[#fcfcfc] px-4 text-sm focus-visible:border-[#718b9b] focus-visible:ring-2 focus-visible:ring-[#718b9b]/20"
+                  />
+
+                  <p className="mt-2 text-xs text-[#89949a]">
+                    Separate multiple conditions with commas.
+                  </p>
+                </div>
+
+                <DialogFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={profileLoading}
+                    onClick={() => setEditDialogOpen(false)}
+                    className="rounded-full border-[#dce2e5] px-5 text-sm text-[#58656d] hover:bg-[#f7f8f8]"
+                  >
+                    Cancel
+                  </Button>
+
+                  <Button
+                    type="submit"
+                    disabled={profileLoading}
+                    className="rounded-full bg-[#405f73] px-5 text-sm text-white hover:bg-[#324e60]"
+                  >
+                    {profileLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <UploadCloud className="mr-2 h-4 w-4" />
+                        Save changes
+                      </>
+                    )}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          {/* Footer */}
+          <footer className="mt-8 flex flex-col items-center justify-between gap-3 border-t border-[#e4e8e9] py-5 text-xs text-[#89949a] sm:flex-row">
+            <p>© {new Date().getFullYear()} SymptomSync</p>
+            <p>Your health, in perspective.</p>
+          </footer>
+        </div>
+      </main>
     </>
   );
 }
