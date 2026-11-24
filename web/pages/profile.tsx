@@ -197,10 +197,6 @@ export default function ProfilePage() {
       }
 
       setProfile(updatedProfile);
-      setEditDialogOpen(false);
-      toast.success("Profile updated successfully.");
-
-      setProfile(updatedProfile);
       setFullName(updatedProfile.full_name || "");
       setConditionTags((updatedProfile.condition_tags || []).join(", "));
       setAvatarFile(null);
@@ -231,6 +227,11 @@ export default function ProfilePage() {
         avatar_url: null,
         condition_tags: profile.condition_tags,
       });
+
+      if (!updatedProfile) {
+        toast.error("Failed to remove profile photo. Please try again.");
+        return;
+      }
 
       setProfile(updatedProfile);
       setAvatarFile(null);
@@ -444,7 +445,7 @@ export default function ProfilePage() {
                       Health conditions
                     </h3>
                     <p className="mt-1 text-sm text-[#89949a]">
-                      Conditions you've added to your profile.
+                      Conditions you have added to your profile.
                     </p>
                   </div>
 
