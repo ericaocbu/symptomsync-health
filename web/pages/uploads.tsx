@@ -23,6 +23,12 @@ import {
   FolderOpen,
   X,
 } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 import Head from "next/head";
 import { toast } from "sonner";
@@ -747,46 +753,64 @@ export default function DocumentsPage() {
 
                         {/* Actions */}
                         <div className="flex items-center justify-end gap-1 border-t border-[#edf0f1] pt-3 md:border-0 md:pt-0">
-                          <button
-                            onClick={() => router.push(`/files/${file.id}`)}
-                            title="View document"
-                            aria-label={`View ${file.filename}`}
-                            className="flex h-9 w-9 items-center justify-center rounded-lg text-[#69747b] transition-colors hover:bg-[#e6edf2] hover:text-[#405f73]"
-                          >
-                            <Eye size={17} />
-                          </button>
+                          <TooltipProvider delayDuration={300}>
+                            <div className="flex items-center justify-end gap-1">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    onClick={() => router.push(`/files/${file.id}`)}
+                                    aria-label={`View ${file.filename}`}
+                                    className="flex h-9 w-9 items-center justify-center rounded-lg text-[#69747b] transition-colors hover:bg-[#e6edf2] hover:text-[#405f73]"
+                                  >
+                                    <Eye size={17} />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent>View document</TooltipContent>
+                              </Tooltip>
 
-                          <button
-                            onClick={() => openEditDialog(file)}
-                            title="Edit document"
-                            aria-label={`Edit ${file.filename}`}
-                            className="flex h-9 w-9 items-center justify-center rounded-lg text-[#69747b] transition-colors hover:bg-[#e6edf2] hover:text-[#405f73]"
-                          >
-                            <Edit3 size={16} />
-                          </button>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    onClick={() => openEditDialog(file)}
+                                    aria-label={`Edit ${file.filename}`}
+                                    className="flex h-9 w-9 items-center justify-center rounded-lg text-[#69747b] transition-colors hover:bg-[#e6edf2] hover:text-[#405f73]"
+                                  >
+                                    <Edit3 size={16} />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent>Edit details</TooltipContent>
+                              </Tooltip>
 
-                          <button
-                            onClick={() =>
-                              handleDownload(file.url, file.filename)
-                            }
-                            title="Download document"
-                            aria-label={`Download ${file.filename}`}
-                            className="flex h-9 w-9 items-center justify-center rounded-lg text-[#69747b] transition-colors hover:bg-[#e6edf2] hover:text-[#405f73]"
-                          >
-                            <Download size={17} />
-                          </button>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    onClick={() => handleDownload(file.url, file.filename)}
+                                    aria-label={`Download ${file.filename}`}
+                                    className="flex h-9 w-9 items-center justify-center rounded-lg text-[#69747b] transition-colors hover:bg-[#e6edf2] hover:text-[#405f73]"
+                                  >
+                                    <Download size={17} />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent>Download</TooltipContent>
+                              </Tooltip>
 
-                          <button
-                            onClick={() => {
-                              setFileToDelete(file.id);
-                              setConfirmDeleteDialogOpen(true);
-                            }}
-                            title="Delete document"
-                            aria-label={`Delete ${file.filename}`}
-                            className="flex h-9 w-9 items-center justify-center rounded-lg text-[#89949a] transition-colors hover:bg-red-50 hover:text-red-600"
-                          >
-                            <Trash2 size={16} />
-                          </button>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    onClick={() => {
+                                      setFileToDelete(file.id);
+                                      setConfirmDeleteDialogOpen(true);
+                                    }}
+                                    aria-label={`Delete ${file.filename}`}
+                                    className="flex h-9 w-9 items-center justify-center rounded-lg text-[#89949a] transition-colors hover:bg-red-50 hover:text-red-600"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent>Delete document</TooltipContent>
+                              </Tooltip>
+                            </div>
+                          </TooltipProvider>
                         </div>
                       </div>
                     );
@@ -989,7 +1013,7 @@ export default function DocumentsPage() {
             </DialogTitle>
 
             <DialogDescription className="text-sm leading-6 text-[#69747b]">
-              Select the PDF and image documents you'd like to combine into
+              Select the PDF and image documents you would like to combine into
               one downloadable report.
             </DialogDescription>
           </DialogHeader>
