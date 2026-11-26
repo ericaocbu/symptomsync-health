@@ -3,7 +3,6 @@ import { useRouter } from "next/router";
 import Head from "next/head";
 import { format } from "date-fns";
 import {
-  ArrowLeft,
   Bell,
   CalendarDays,
   ChevronLeft,
@@ -78,7 +77,7 @@ export default function MedicationReminders() {
   const [medPage, setMedPage] = useState(1);
   const [totalMeds, setTotalMeds] = useState(0);
 
-  const broadcastChannelRef = useRef<any>(null);
+  const broadcastChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   const totalPages = Math.ceil(totalMeds / ITEMS_PER_PAGE);
 
@@ -152,10 +151,10 @@ export default function MedicationReminders() {
       broadcastChannelRef.current = channel;
 
       channel
-        .on("broadcast", { event: "*" }, (payload: any) => {
+        .on("broadcast", { event: "*" }, (payload) => {
           const message = payload?.payload?.message;
 
-          if (message) {
+          if (typeof message === "string" && message.length > 0) {
             toast.success(
               `Notification: ${message.replace(/\./g, "")} from another device or tab.`,
             );
