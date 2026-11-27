@@ -1,6 +1,33 @@
-import React, { useEffect, useState, useRef } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
+import Head from "next/head";
+import {
+  addDays,
+  addMonths,
+  format,
+  getDay,
+  parse,
+  startOfWeek,
+} from "date-fns";
+import { enUS } from "date-fns/locale/en-US";
+import { Calendar, dateFnsLocalizer } from "react-big-calendar";
+import type { ChangeEvent, CSSProperties } from "react";
+
+import {
+  CalendarDays,
+  Check,
+  Download,
+  FileUp,
+  Loader2,
+  Pencil,
+  Pill,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
+import { toast } from "sonner";
+
+import { supabase } from "@/lib/supabaseClient";
 import {
   MedicationReminder,
   getMedicationRemindersByUser,
@@ -15,14 +42,22 @@ import {
   deleteAppointmentReminder,
   updateAppointmentReminder,
 } from "@/lib/appointmentReminders";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { DatePicker } from "@/components/ui/date-picker";
+import { CustomTimePicker } from "@/components/ui/time-picker";
+
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
+
 import {
   Select,
   SelectContent,
@@ -30,73 +65,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Calendar, dateFnsLocalizer } from "react-big-calendar";
-import "react-big-calendar/lib/css/react-big-calendar.css";
-import {
-  parse,
-  startOfWeek,
-  getDay,
-  format,
-  addDays,
-  addMonths,
-} from "date-fns";
-import { enUS } from "date-fns/locale/en-US";
-import { toast } from "sonner";
-import {
-  Trash2,
-  Edit3,
-  CheckSquare,
-  XSquare,
-  Download,
-  Calendar as CalendarIcon,
-  Pill,
-  Loader2,
-} from "lucide-react";
-import Head from "next/head";
-import { motion } from "framer-motion";
-import { DatePicker } from "@/components/ui/date-picker";
-import { CustomTimePicker } from "@/components/ui/time-picker";
 
-const containerVariants = {
-  hidden: { opacity: 0, pointerEvents: "none" },
-  visible: {
-    opacity: 1,
-    pointerEvents: "auto",
-    transition: { when: "beforeChildren", staggerChildren: 0.1 },
-  },
-};
-
-const slideInLeft = {
-  hidden: { opacity: 0, x: -50 },
-  visible: {
-    opacity: 1,
-    x: 0,
-    transition: { duration: 0.6, ease: "easeOut" },
-  },
-};
-
-const fadeInUp = {
-  hidden: { opacity: 0, y: 20 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.5, ease: "easeOut" },
-  },
-};
-
-const locales = {
-  "en-US": enUS,
-};
+const ITEMS_PER_DAY = 90;
 
 const localizer = dateFnsLocalizer({
   format,
   parse,
   startOfWeek,
   getDay,
-  locales,
+  locales: { "en-US": enUS },
 });
 
 type CalendarEvent = {
@@ -105,864 +82,919 @@ type CalendarEvent = {
   start: Date;
   end: Date;
   type: "medication" | "appointment";
+  dosage?: string | null;
+  recurrence?: string | null;
 };
 
-/**
- * Takes a medication reminder and expands it into multiple calendar events based on its recurrence
- *
- * @param med - The medication reminder object.
- * @param horizonDays - The number of days to expand the events into the future.
- * @returns - An array of calendar events.
- */
+type EventType = "medication" | "appointment";
+
+type ImportedEvent = {
+  summary: string;
+  dtstart: string;
+  dtend: string;
+};
+
+const recurrenceOptions = [
+  { label: "As needed", value: "As Needed" },
+  { label: "Daily", value: "Daily" },
+  { label: "Weekly", value: "Weekly" },
+  { label: "Every two weeks", value: "Biweekly" },
+  { label: "Monthly", value: "Monthly" },
+];
+
 function expandMedication(
-  med: MedicationReminder,
-  // For now we'll just do 90 days - since we don't ask the user for the end date when they add a med
-  horizonDays = 90,
+  medication: MedicationReminder,
+  horizonDays = ITEMS_PER_DAY,
 ): CalendarEvent[] {
-  const baseTime = new Date(med.reminder_time);
-  const events: CalendarEvent[] = [];
-  const recurrence = med.recurrence
-    ? med.recurrence
-        .toLowerCase()
-        .replace(/[-\s]+/g, " ")
-        .trim()
-    : "";
+  const baseTime = new Date(medication.reminder_time);
+
+  if (Number.isNaN(baseTime.getTime())) {
+    return [];
+  }
+
+  const recurrence = (medication.recurrence ?? "")
+    .toLowerCase()
+    .replace(/[-\s]+/g, " ")
+    .trim();
+
+  const createEvent = (date: Date, index: number): CalendarEvent => ({
+    id: `med-${medication.id}-${index}`,
+    title: medication.medication_name,
+    start: new Date(date),
+    end: new Date(date.getTime() + 15 * 60 * 1000),
+    type: "medication",
+    dosage: medication.dosage,
+    recurrence: medication.recurrence,
+  });
 
   if (!recurrence || recurrence === "as needed") {
-    events.push({
-      id: `med-${med.id}-0`,
-      title: `💊 Med: ${med.medication_name}`,
-      start: baseTime,
-      end: baseTime,
-      type: "medication",
-    });
-    return events;
+    return [createEvent(baseTime, 0)];
   }
 
   const endPoint = addDays(baseTime, horizonDays);
+  const events: CalendarEvent[] = [];
 
-  let deltaDays = 1;
-  if (recurrence === "weekly") {
-    deltaDays = 7;
-  } else if (recurrence === "biweekly") {
-    deltaDays = 14;
-  } else if (recurrence === "monthly") {
-    // Monthly recurrence will be handled below
-  }
-
-  let index = 0;
   if (recurrence === "monthly") {
     let current = new Date(baseTime);
+    let index = 0;
+
     while (current <= endPoint) {
-      events.push({
-        id: `med-${med.id}-${index}`,
-        title: `💊 Med: ${med.medication_name}`,
-        start: new Date(current),
-        end: new Date(current),
-        type: "medication",
-      });
-      index++;
+      events.push(createEvent(current, index));
+      index += 1;
       current = addMonths(current, 1);
     }
-  } else {
-    let current = new Date(baseTime);
-    while (current <= endPoint) {
-      events.push({
-        id: `med-${med.id}-${index}`,
-        title: `💊 Med: ${med.medication_name}`,
-        start: new Date(current),
-        end: new Date(current),
-        type: "medication",
-      });
-      index++;
-      current = addDays(current, deltaDays);
-    }
+
+    return events;
+  }
+
+  const interval =
+    recurrence === "weekly" ? 7 : recurrence === "biweekly" ? 14 : 1;
+
+  let current = new Date(baseTime);
+  let index = 0;
+
+  while (current <= endPoint) {
+    events.push(createEvent(current, index));
+    index += 1;
+    current = addDays(current, interval);
   }
 
   return events;
 }
 
-/**
- * Converts a raw ICS date string of the form "YYYYMMDDTHHMMSS"
- * into a valid ISO 8601 date string (like "YYYY-MM-DDTHH:MM:SSZ")
- *
- * Asked ChatGPT to help me with the regexs
- *
- * @param dateStr - The raw ICS date string to normalize.
- * @returns - The normalized date string in ISO 8601 format.
- */
-function normalizeIcsDate(dateStr: string): string {
-  const regex = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/;
-  const match = regex.exec(dateStr);
-  if (match) {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const [_, year, month, day, hour, minute, second, z] = match;
-    return `${year}-${month}-${day}T${hour}:${minute}:${second}${z || "Z"}`;
-  }
+function makeAppointmentEvent(
+  appointment: AppointmentReminder,
+): CalendarEvent {
+  const start = new Date(appointment.date);
+  const end = new Date(start);
+  end.setHours(end.getHours() + 1);
 
-  return dateStr;
+  return {
+    id: `appt-${appointment.id}`,
+    title: appointment.appointment_name,
+    start,
+    end,
+    type: "appointment",
+  };
 }
 
-/**
- * Generates an ICS string from the given events
- *
- * @param events - An array of calendar events to include in the ICS file.
- * @returns - A string representing the ICS file content.
- */
+function getMedicationId(eventId: string): string {
+  const withoutPrefix = eventId.slice(4);
+  const lastDash = withoutPrefix.lastIndexOf("-");
+
+  return lastDash === -1
+    ? withoutPrefix
+    : withoutPrefix.slice(0, lastDash);
+}
+
+function formatUtcDate(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+
+  return (
+    `${date.getUTCFullYear()}` +
+    `${pad(date.getUTCMonth() + 1)}` +
+    `${pad(date.getUTCDate())}` +
+    `T${pad(date.getUTCHours())}` +
+    `${pad(date.getUTCMinutes())}` +
+    `${pad(date.getUTCSeconds())}Z`
+  );
+}
+
+function escapeIcsText(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/\n/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
+}
+
+function unescapeIcsText(value: string): string {
+  return value
+    .replace(/\\n/gi, "\n")
+    .replace(/\\,/g, ",")
+    .replace(/\\;/g, ";")
+    .replace(/\\\\/g, "\\");
+}
+
 function generateIcs(events: CalendarEvent[]): string {
-  const formatDateUtc = (date: Date) => format(date, "yyyyMMdd'T'HHmmss'Z'");
-  const ics = [
+  const lines = [
     "BEGIN:VCALENDAR",
-    "CALSCALE:GREGORIAN",
-    "PRODID:-//SymptomSync//EN",
+    "PRODID:-//SymptomSync//Calendar//EN",
     "VERSION:2.0",
+    "CALSCALE:GREGORIAN",
     "X-WR-CALNAME:SymptomSync Calendar",
   ];
-  const dtStamp = formatDateUtc(new Date());
-  events.forEach((ev) => {
-    ics.push("BEGIN:VEVENT");
-    ics.push(`UID:${ev.id}@symptomsync.com`);
-    ics.push(`DTSTAMP:${dtStamp}`);
-    ics.push(`DTSTART:${formatDateUtc(ev.start)}`);
-    ics.push(`DTEND:${formatDateUtc(ev.end)}`);
 
-    if (ev.type === "medication") {
-      ics.push(`SUMMARY:💊 Med: ${ev.title.replace(/^💊 Med: /, "")}`);
-    } else {
-      ics.push(`SUMMARY:🗓️ Appt: ${ev.title.replace(/^🗓️ Appt: /, "")}`);
-    }
-    ics.push("END:VEVENT");
+  const timestamp = formatUtcDate(new Date());
+
+  events.forEach((event) => {
+    const summary =
+      event.type === "medication"
+        ? `Med: ${event.title}`
+        : `Appt: ${event.title}`;
+
+    lines.push(
+      "BEGIN:VEVENT",
+      `UID:${event.id}@symptomsync.com`,
+      `DTSTAMP:${timestamp}`,
+      `DTSTART:${formatUtcDate(event.start)}`,
+      `DTEND:${formatUtcDate(event.end)}`,
+      `SUMMARY:${escapeIcsText(summary)}`,
+      "END:VEVENT",
+    );
   });
-  ics.push("END:VCALENDAR");
-  return ics.join("\r\n");
+
+  lines.push("END:VCALENDAR");
+
+  return lines.join("\r\n");
 }
 
-/**
- * Parses a simple ICS string and returns an array of objects representing the events.
- * This parser extracts DTSTART, DTEND, and SUMMARY and normalizes the dates.
- * Only events within the past year are returned to avoid too large calendars
- */
-function parseIcs(
-  icsText: string,
-): { summary: string; dtstart: string; dtend: string }[] {
-  const events = [];
+function normalizeIcsDate(value: string): string {
+  const match =
+    /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/.exec(value);
+
+  if (!match) {
+    return value;
+  }
+
+  const [, year, month, day, hour, minute, second, timezone] = match;
+
+  return `${year}-${month}-${day}T${hour}:${minute}:${second}${timezone || "Z"}`;
+}
+
+function parseIcs(icsText: string): ImportedEvent[] {
+  const events: ImportedEvent[] = [];
   const lines = icsText.split(/\r?\n/);
-  let currentEvent: { summary?: string; dtstart?: string; dtend?: string } = {};
-  let inEvent = false;
+
+  let currentEvent: Partial<ImportedEvent> = {};
+  let insideEvent = false;
+
   for (const line of lines) {
     if (line === "BEGIN:VEVENT") {
-      inEvent = true;
+      insideEvent = true;
       currentEvent = {};
-    } else if (line === "END:VEVENT") {
-      inEvent = false;
-      if (currentEvent.dtstart && currentEvent.dtend && currentEvent.summary) {
+      continue;
+    }
+
+    if (line === "END:VEVENT") {
+      insideEvent = false;
+
+      if (
+        currentEvent.summary &&
+        currentEvent.dtstart &&
+        currentEvent.dtend
+      ) {
         events.push({
           summary: currentEvent.summary,
           dtstart: currentEvent.dtstart,
           dtend: currentEvent.dtend,
         });
       }
-    } else if (inEvent) {
-      if (line.startsWith("SUMMARY:")) {
-        currentEvent.summary = line.substring(8).trim();
-      } else if (line.startsWith("DTSTART:")) {
-        currentEvent.dtstart = normalizeIcsDate(line.substring(8).trim());
-      } else if (line.startsWith("DTEND:")) {
-        currentEvent.dtend = normalizeIcsDate(line.substring(6).trim());
-      }
+
+      continue;
+    }
+
+    if (!insideEvent) continue;
+
+    if (line.startsWith("SUMMARY:")) {
+      currentEvent.summary = unescapeIcsText(line.slice(8).trim());
+    } else if (line.startsWith("DTSTART")) {
+      const value = line.slice(line.indexOf(":") + 1).trim();
+      currentEvent.dtstart = normalizeIcsDate(value);
+    } else if (line.startsWith("DTEND")) {
+      const value = line.slice(line.indexOf(":") + 1).trim();
+      currentEvent.dtend = normalizeIcsDate(value);
     }
   }
-  const oneYearAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
-  return events.filter(
-    (ev) => new Date(ev.dtstart).getTime() >= oneYearAgo.getTime(),
-  );
+
+  const oneYearAgo = new Date();
+  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+  return events.filter((event) => {
+    const date = new Date(event.dtstart);
+    return !Number.isNaN(date.getTime()) && date >= oneYearAgo;
+  });
 }
 
-/**
- * Handles importing an ICS file. Tries its best to classify events as
- * medications or appointments based on the summary. But this is a heuristic
- * and may not be 100% accurate. For events it doesn't recognize, it will
- * treat them as appointments
- *
- * @param e - The change event from the file input.
- * @param userId - The user ID to associate the events with.
- * @param refresh - A function to refresh the data after import.
- * @return - A promise that resolves when the import is complete.
- */
-function handleImportIcs(
-  e: React.ChangeEvent<HTMLInputElement>,
-  userId: string,
-  refresh: () => Promise<void>,
-) {
-  const file = e.target.files?.[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = async (event) => {
+
+function combineLocalDateAndTime(
+  date: Date,
+  time: string,
+): Date | null {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(time);
+
+  if (!match) {
+    return null;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+
+  const result = new Date(date);
+  result.setHours(hours, minutes, 0, 0);
+
+  return Number.isNaN(result.getTime()) ? null : result;
+}
+
+
+export default function CalendarPage() {
+  const router = useRouter();
+
+  const [userId, setUserId] = useState<string | null>(null);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showEventDialog, setShowEventDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showIcsDialog, setShowIcsDialog] = useState(false);
+
+  const [addType, setAddType] = useState<EventType>("appointment");
+  const [dialogEvent, setDialogEvent] = useState<CalendarEvent | null>(null);
+
+  const [newApptName, setNewApptName] = useState("");
+  const [newApptDate, setNewApptDate] = useState<Date | undefined>();
+  const [newApptTime, setNewApptTime] = useState("09:00");
+
+  const [newMedName, setNewMedName] = useState("");
+  const [newMedDate, setNewMedDate] = useState<Date | undefined>();
+  const [newMedTime, setNewMedTime] = useState("09:00");
+  const [newMedDosage, setNewMedDosage] = useState("");
+  const [newMedDosageUnit, setNewMedDosageUnit] = useState("mg");
+  const [newMedRecurrence, setNewMedRecurrence] = useState("Daily");
+
+  const [editTitle, setEditTitle] = useState("");
+  const [editDate, setEditDate] = useState<Date | undefined>();
+  const [editTime, setEditTime] = useState("09:00");
+  const [editMedDosage, setEditMedDosage] = useState("");
+  const [editMedDosageUnit, setEditMedDosageUnit] = useState("mg");
+  const [editMedRecurrence, setEditMedRecurrence] = useState("Daily");
+
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedEventIds, setSelectedEventIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [deleteTargetIds, setDeleteTargetIds] = useState<string[]>([]);
+
+  const broadcastChannelRef =
+    useRef<ReturnType<typeof supabase.channel> | null>(null);
+
+  const fetchAllData = useCallback(async (uid: string) => {
+    setIsLoading(true);
+
     try {
-      const text = event.target?.result as string;
+      const [medications, appointments] = await Promise.all([
+        getMedicationRemindersByUser(uid),
+        getAppointmentRemindersByUser(uid),
+      ]);
+
+      const medicationEvents = medications.flatMap((medication) =>
+        expandMedication(medication),
+      );
+
+      const appointmentEvents = appointments.map(makeAppointmentEvent);
+
+      setEvents([...medicationEvents, ...appointmentEvents]);
+    } catch (error) {
+      console.error("Error fetching calendar data:", error);
+      toast.error("Unable to load your calendar.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const sendBroadcast = useCallback(
+    (eventName: string, message: string) => {
+      broadcastChannelRef.current?.send({
+        type: "broadcast",
+        event: eventName,
+        payload: { message },
+      });
+    },
+    [],
+  );
+
+  // Load the signed-in user, fetch calendar data, and subscribe to changes.
+  useEffect(() => {
+    let cancelled = false;
+    const channels: ReturnType<typeof supabase.channel>[] = [];
+
+    async function initializeCalendar() {
+      try {
+        const {
+          data: { user },
+          error,
+        } = await supabase.auth.getUser();
+
+        if (cancelled) return;
+
+        if (error || !user) {
+          router.push("/auth/login");
+          setIsLoading(false);
+          return;
+        }
+
+        setUserId(user.id);
+        await fetchAllData(user.id);
+
+        if (cancelled) return;
+
+        const medicationChannel = supabase
+          .channel(`calendar-medications-${user.id}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "medication_reminders",
+              filter: `user_profile_id=eq.${user.id}`,
+            },
+            () => {
+              void fetchAllData(user.id);
+            },
+          )
+          .subscribe();
+
+        const appointmentChannel = supabase
+          .channel(`calendar-appointments-${user.id}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "appointment_reminders",
+              filter: `user_profile_id=eq.${user.id}`,
+            },
+            () => {
+              void fetchAllData(user.id);
+            },
+          )
+          .subscribe();
+
+        channels.push(medicationChannel, appointmentChannel);
+      } catch (error) {
+        console.error("Error initializing calendar:", error);
+        if (!cancelled) {
+          setIsLoading(false);
+          toast.error("Unable to load your calendar.");
+        }
+      }
+    }
+
+    void initializeCalendar();
+
+    return () => {
+      cancelled = true;
+      channels.forEach((channel) => {
+        void supabase.removeChannel(channel);
+      });
+    };
+  }, [fetchAllData, router]);
+
+  // Subscribe to messages broadcast from the user's other sessions.
+  useEffect(() => {
+    let cancelled = false;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    async function subscribeToUserChannel() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (cancelled || !user) return;
+
+      channel = supabase.channel(`user-channel-${user.id}`, {
+        config: { broadcast: { self: false } },
+      });
+
+      broadcastChannelRef.current = channel;
+
+      channel
+        .on("broadcast", { event: "*" }, (payload) => {
+          const message = payload?.payload?.message;
+
+          if (typeof message === "string" && message.length > 0) {
+            toast.success(
+              `Update from another device: ${message.replace(/\./g, "")}`,
+            );
+          }
+        })
+        .subscribe();
+    }
+
+    void subscribeToUserChannel();
+
+    return () => {
+      cancelled = true;
+
+      if (channel) {
+        void supabase.removeChannel(channel);
+      }
+
+      broadcastChannelRef.current = null;
+    };
+  }, []);
+
+  function openAddDialog(type: EventType) {
+    setAddType(type);
+
+    if (type === "appointment") {
+      setNewApptDate(new Date());
+      setNewApptTime(format(new Date(), "HH:mm"));
+    } else {
+      setNewMedDate(new Date());
+      setNewMedTime(format(new Date(), "HH:mm"));
+    }
+
+    setShowAddDialog(true);
+  }
+
+  function handleSelectSlot(slotInfo: { start: Date; end: Date }) {
+    setNewApptDate(slotInfo.start);
+    setNewMedDate(slotInfo.start);
+    setNewApptTime(format(slotInfo.start, "HH:mm"));
+    setNewMedTime(format(slotInfo.start, "HH:mm"));
+    setAddType("appointment");
+    setShowAddDialog(true);
+  }
+
+  async function handleAddAppointment() {
+    if (!userId || !newApptName.trim() || !newApptDate) {
+      toast.error("Please enter an appointment name and date.");
+      return;
+    }
+
+    const localDate = combineLocalDateAndTime(
+      newApptDate,
+      newApptTime,
+    );
+
+    if (!localDate) {
+      toast.error("Please select a valid appointment date and time.");
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      const created = await createAppointmentReminder({
+        user_profile_id: userId,
+        appointment_name: newApptName.trim(),
+        date: localDate.toISOString(),
+      });
+
+      setEvents((previous) => [...previous, makeAppointmentEvent(created)]);
+
+      sendBroadcast(
+        "appt-add",
+        `New appointment reminder "${created.appointment_name}" added.`,
+      );
+
+      toast.success("Appointment added successfully.");
+      setShowAddDialog(false);
+      setNewApptName("");
+      setNewApptDate(undefined);
+      setNewApptTime("09:00");
+    } catch (error) {
+      console.error("Error creating appointment:", error);
+      toast.error("Unable to create appointment.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleAddMedication() {
+    if (!userId || !newMedName.trim() || !newMedDate) {
+      toast.error("Please enter a medication name and date.");
+      return;
+    }
+
+    const localDate = combineLocalDateAndTime(
+      newMedDate,
+      newMedTime,
+    );
+
+    if (!localDate) {
+      toast.error("Please select a valid medication date and time.");
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      const dosage = newMedDosage.trim()
+        ? `${newMedDosage.trim()} ${newMedDosageUnit}`
+        : "";
+
+      const created = await createMedicationReminder({
+        user_profile_id: userId,
+        medication_name: newMedName.trim(),
+        dosage,
+        reminder_time: localDate.toISOString(),
+        recurrence: newMedRecurrence,
+        calendar_sync_token: null,
+      });
+
+      setEvents((previous) => [
+        ...previous,
+        ...expandMedication(created),
+      ]);
+
+      sendBroadcast(
+        "med-add",
+        `New medication reminder "${created.medication_name}" added.`,
+      );
+
+      toast.success("Medication added successfully.");
+      setShowAddDialog(false);
+      setNewMedName("");
+      setNewMedDate(undefined);
+      setNewMedTime("09:00");
+      setNewMedDosage("");
+      setNewMedDosageUnit("mg");
+      setNewMedRecurrence("Daily");
+    } catch (error) {
+      console.error("Error creating medication reminder:", error);
+      toast.error("Unable to create medication reminder.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function openEventDialog(event: CalendarEvent) {
+    if (selectMode) {
+      setSelectedEventIds((previous) => {
+        const next = new Set(previous);
+
+        if (next.has(event.id)) {
+          next.delete(event.id);
+        } else {
+          next.add(event.id);
+        }
+
+        return next;
+      });
+
+      return;
+    }
+
+    setDialogEvent(event);
+    setEditTitle(event.title);
+    setEditDate(event.start);
+    setEditTime(format(event.start, "HH:mm"));
+
+    if (event.type === "medication") {
+      const dosageParts = (event.dosage ?? "").trim().split(/\s+/);
+
+      setEditMedDosage(dosageParts[0] ?? "");
+      setEditMedDosageUnit(dosageParts[1] ?? "mg");
+      setEditMedRecurrence(event.recurrence || "Daily");
+    }
+
+    setShowEventDialog(true);
+  }
+
+  async function handleSaveEventEdits() {
+    if (!dialogEvent || !editDate || !editTitle.trim()) {
+      toast.error("Please complete the required fields.");
+      return;
+    }
+
+    const localDate = combineLocalDateAndTime(editDate, editTime);
+
+    if (!localDate) {
+      toast.error("Please select a valid date and time.");
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      const isoString = localDate.toISOString();
+
+      if (dialogEvent.type === "appointment") {
+        const appointmentId = dialogEvent.id.slice(5);
+
+        const updated = await updateAppointmentReminder(appointmentId, {
+          appointment_name: editTitle.trim(),
+          date: isoString,
+        });
+
+        const updatedEvent = makeAppointmentEvent(updated);
+
+        setEvents((previous) =>
+          previous.map((event) =>
+            event.id === dialogEvent.id ? updatedEvent : event,
+          ),
+        );
+
+        sendBroadcast(
+          "appt-update",
+          `Appointment "${editTitle.trim()}" updated.`,
+        );
+
+        toast.success("Appointment updated successfully.");
+      } else {
+        const medicationId = getMedicationId(dialogEvent.id);
+        const dosage = editMedDosage.trim()
+          ? `${editMedDosage.trim()} ${editMedDosageUnit}`
+          : "";
+
+        const updated = await updateMedicationReminder(medicationId, {
+          medication_name: editTitle.trim(),
+          dosage,
+          reminder_time: isoString,
+          recurrence: editMedRecurrence,
+        });
+
+        const replacementEvents = expandMedication(updated);
+
+        setEvents((previous) => [
+          ...previous.filter(
+            (event) =>
+              event.type !== "medication" ||
+              getMedicationId(event.id) !== medicationId,
+          ),
+          ...replacementEvents,
+        ]);
+
+        sendBroadcast(
+          "med-update",
+          `Medication "${editTitle.trim()}" updated.`,
+        );
+
+        toast.success("Medication reminder updated successfully.");
+      }
+
+      setShowEventDialog(false);
+      setDialogEvent(null);
+    } catch (error) {
+      console.error("Error updating calendar event:", error);
+      toast.error("Unable to update this event.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function requestDeleteEvent() {
+    if (!dialogEvent) return;
+
+    setDeleteTargetIds([dialogEvent.id]);
+    setShowDeleteDialog(true);
+  }
+
+  function requestDeleteSelected() {
+    if (selectedEventIds.size === 0) return;
+
+    setDeleteTargetIds(Array.from(selectedEventIds));
+    setShowDeleteDialog(true);
+  }
+
+  async function handleDeleteEvents() {
+    if (deleteTargetIds.length === 0) return;
+
+    const appointmentIds = new Set<string>();
+    const medicationIds = new Set<string>();
+
+    deleteTargetIds.forEach((eventId) => {
+      if (eventId.startsWith("appt-")) {
+        appointmentIds.add(eventId.slice(5));
+      } else if (eventId.startsWith("med-")) {
+        medicationIds.add(getMedicationId(eventId));
+      }
+    });
+
+    setIsSaving(true);
+
+    try {
+      await Promise.all([
+        ...Array.from(appointmentIds).map((id) =>
+          deleteAppointmentReminder(id),
+        ),
+        ...Array.from(medicationIds).map((id) =>
+          deleteMedicationReminder(id),
+        ),
+      ]);
+
+      setEvents((previous) =>
+        previous.filter((event) => {
+          if (event.type === "appointment") {
+            return !appointmentIds.has(event.id.slice(5));
+          }
+
+          return !medicationIds.has(getMedicationId(event.id));
+        }),
+      );
+
+      appointmentIds.forEach(() => {
+        sendBroadcast("appt-delete", "An appointment reminder was deleted.");
+      });
+
+      medicationIds.forEach(() => {
+        sendBroadcast("med-delete", "A medication reminder was deleted.");
+      });
+
+      toast.success(
+        `${appointmentIds.size + medicationIds.size} reminder${
+          appointmentIds.size + medicationIds.size === 1 ? "" : "s"
+        } deleted.`,
+      );
+
+      setSelectedEventIds(new Set());
+      setSelectMode(false);
+      setShowDeleteDialog(false);
+      setShowEventDialog(false);
+      setDialogEvent(null);
+      setDeleteTargetIds([]);
+    } catch (error) {
+      console.error("Error deleting calendar events:", error);
+      toast.error("Unable to delete the selected reminders.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function handleExportCalendar() {
+    const icsString = generateIcs(events);
+    const blob = new Blob([icsString], {
+      type: "text/calendar;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = "symptomsync-calendar.ics";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    toast.success("Calendar export downloaded.");
+  }
+
+  async function handleImportCalendar(
+    event: ChangeEvent<HTMLInputElement>,
+  ) {
+    const file = event.target.files?.[0];
+
+    if (!file || !userId) return;
+
+    if (!file.name.toLowerCase().endsWith(".ics")) {
+      toast.error("Please select an .ics calendar file.");
+      event.target.value = "";
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      const text = await file.text();
       const importedEvents = parseIcs(text);
-      for (const ev of importedEvents) {
-        if (/^(Med:|Medication:)/i.test(ev.summary)) {
-          const medName = ev.summary.replace(/^(Med:|Medication:)\s*/i, "");
+
+      if (importedEvents.length === 0) {
+        toast.error("No supported calendar events were found in this file.");
+        return;
+      }
+
+      let importedCount = 0;
+
+      for (const imported of importedEvents) {
+        const startDate = new Date(imported.dtstart);
+
+        if (Number.isNaN(startDate.getTime())) continue;
+
+        const medicationMatch =
+          /^(?:Med|Medication):\s*/i.exec(imported.summary);
+
+        if (medicationMatch) {
+          const medicationName = imported.summary
+            .replace(/^(?:Med|Medication):\s*/i, "")
+            .trim();
+
+          if (!medicationName) continue;
+
           await createMedicationReminder({
             user_profile_id: userId,
-            medication_name: medName,
+            medication_name: medicationName,
             dosage: null,
-            reminder_time: new Date(ev.dtstart).toISOString(),
+            reminder_time: startDate.toISOString(),
             recurrence: "As Needed",
             calendar_sync_token: null,
           });
         } else {
           await createAppointmentReminder({
             user_profile_id: userId,
-            appointment_name: ev.summary,
-            date: new Date(ev.dtstart).toISOString(),
+            appointment_name: imported.summary.trim(),
+            date: startDate.toISOString(),
           });
         }
-      }
-      toast.success("ICS file imported successfully");
-      await refresh();
-    } catch (error) {
-      console.error("Error importing ICS", error);
-      toast.error("Error importing ICS file");
-    }
-  };
-  reader.readAsText(file);
-}
 
-export default function CalendarPage() {
-  const [userId, setUserId] = useState<string | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [medications, setMedications] = useState<MedicationReminder[]>([]);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [appointments, setAppointments] = useState<AppointmentReminder[]>([]);
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const channelRefs = useRef<any[]>([]);
-  const [showSelectTypeDialog, setShowSelectTypeDialog] = useState(false);
-  const [slotDate, setSlotDate] = useState<Date | null>(null);
-  const [showAddDialog, setShowAddDialog] = useState(false);
-  const [addType, setAddType] = useState<"appointment" | "medication">(
-    "appointment",
-  );
-  const [newApptName, setNewApptName] = useState("");
-  const [newApptDate, setNewApptDate] = useState<Date | undefined>(undefined);
-  const [newApptTime, setNewApptTime] = useState("00:00");
-  const [newMedName, setNewMedName] = useState("");
-  const [newMedDate, setNewMedDate] = useState<Date | undefined>(undefined);
-  const [newMedDosage, setNewMedDosage] = useState("");
-  const [newMedDosageUnit, setNewMedDosageUnit] = useState("");
-  const [newMedTimePicker, setNewMedTimePicker] = useState("00:00");
-  const [newMedRecurrence, setNewMedRecurrence] = useState<null | string>(null);
-  const [showEventDialog, setShowEventDialog] = useState(false);
-  const [dialogEvent, setDialogEvent] = useState<CalendarEvent | null>(null);
-  const [editTitle, setEditTitle] = useState("");
-  const [editDate, setEditDate] = useState<Date | undefined>(undefined);
-  const [editTime, setEditTime] = useState("00:00");
-  const [showConfirmDeleteDialog, setShowConfirmDeleteDialog] = useState(false);
-  const [deleteTargetIds, setDeleteTargetIds] = useState<string[]>([]);
-  const [selectMode, setSelectMode] = useState(false);
-  const [selectedEventIds, setSelectedEventIds] = useState<Set<string>>(
-    new Set(),
-  );
-  const [showIcsDialog, setShowIcsDialog] = useState(false);
-  const router = useRouter();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const broadcastChannelRef = useRef<any>(null);
-  const [editMedDosage, setEditMedDosage] = useState("");
-  const [editMedDosageUnit, setEditMedDosageUnit] = useState("mg");
-  const [editMedRecurrence, setEditMedRecurrence] = useState("Daily");
-  const [isLoading, setIsLoading] = useState(true);
-
-  /**
-   * Function to send a broadcast message to all connected clients
-   * using the Supabase broadcast channel.
-   *
-   * @param eventName - The name of the event to broadcast
-   * @param message - The message to send with the event
-   */
-  const sendBroadcast = (eventName: string, message: string) => {
-    if (broadcastChannelRef.current) {
-      broadcastChannelRef.current.send({
-        type: "broadcast",
-        event: eventName,
-        payload: { message },
-      });
-    }
-  };
-
-  /**
-   * Supabase Realtime #1: Subscribe to changes in medication and appointment reminders
-   * and update the UI immediately as changes occur
-   */
-  useEffect(() => {
-    let isMounted = true;
-    async function init() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user || !isMounted) return;
-      setUserId(user.id);
-      await fetchAllData(user.id);
-
-      const medsChannel = supabase
-        .channel("medsSub")
-        .on(
-          "postgres_changes",
-          {
-            event: "INSERT",
-            schema: "public",
-            table: "medication_reminders",
-            filter: `user_profile_id=eq.${user.id}`,
-          },
-          async () => {
-            await fetchAllData(user.id);
-          },
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "UPDATE",
-            schema: "public",
-            table: "medication_reminders",
-            filter: `user_profile_id=eq.${user.id}`,
-          },
-          async () => {
-            await fetchAllData(user.id);
-          },
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "DELETE",
-            schema: "public",
-            table: "medication_reminders",
-            filter: `user_profile_id=eq.${user.id}`,
-          },
-          async () => {
-            await fetchAllData(user.id);
-          },
-        )
-        .subscribe();
-      channelRefs.current.push(medsChannel);
-
-      const apptsChannel = supabase
-        .channel("apptsSub")
-        .on(
-          "postgres_changes",
-          {
-            event: "INSERT",
-            schema: "public",
-            table: "appointment_reminders",
-            filter: `user_profile_id=eq.${user.id}`,
-          },
-          async () => {
-            await fetchAllData(user.id);
-          },
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "UPDATE",
-            schema: "public",
-            table: "appointment_reminders",
-            filter: `user_profile_id=eq.${user.id}`,
-          },
-          async () => {
-            await fetchAllData(user.id);
-          },
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "DELETE",
-            schema: "public",
-            table: "appointment_reminders",
-            filter: `user_profile_id=eq.${user.id}`,
-          },
-          async () => {
-            await fetchAllData(user.id);
-          },
-        )
-        .subscribe();
-      channelRefs.current.push(apptsChannel);
-    }
-
-    init();
-
-    return () => {
-      isMounted = false;
-      channelRefs.current.forEach((ch) => supabase.removeChannel(ch));
-    };
-  }, []);
-
-  /**
-   * Supabase Realtime #2: In the above realtime functionality, we already
-   * created postgres changes for meds, appointments, and health logs. However,
-   * that will only update the UI if the user adds a new med, appointment, or log
-   * from another device. But we may also wanna broadcast a message to the user
-   * when a new med, appointment, or log is added from another device as well.
-   * This is where the broadcast channel comes in - it will broadcast a message
-   * to the user when a new med, appointment, or log is added from another device so
-   * that the user knows that something has changed in the UI and the reason
-   * for that change.
-   */
-  useEffect(() => {
-    async function subscribeToUserChannel() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        router.push("/auth/login");
-        return;
+        importedCount += 1;
       }
 
-      const userChannelName = `user-channel-${user.id}`;
-      broadcastChannelRef.current = supabase.channel(userChannelName, {
-        config: { broadcast: { self: false } },
-      });
-      const channel = broadcastChannelRef.current;
+      await fetchAllData(userId);
 
-      channel
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .on("broadcast", { event: "*" }, (payload: any) => {
-          toast.success(
-            `Notification: ${payload.payload.message.replace(/\./g, "")} from another device or tab.`,
-          );
-        })
-        .subscribe((status: string) => {
-          console.log("User-specific channel status:", status);
-        });
-
-      return () => {
-        supabase.removeChannel(channel);
-        broadcastChannelRef.current = null;
-      };
-    }
-
-    subscribeToUserChannel();
-  }, [router]);
-
-  /**
-   * Fetch all data from the server and update the state
-   * This function fetches both medications and appointments
-   * and expands the medications into multiple events based on their recurrence
-   *
-   * @param uid - The user ID to fetch data for
-   * @returns - Appointment and medication reminders data
-   */
-  async function fetchAllData(uid: string) {
-    setIsLoading(true);
-
-    try {
-      const [meds, appts] = await Promise.all([
-        getMedicationRemindersByUser(uid),
-        getAppointmentRemindersByUser(uid),
-      ]);
-      setMedications(meds);
-      setAppointments(appts);
-
-      let medEvents: CalendarEvent[] = [];
-      meds.forEach((m) => {
-        const repeated = expandMedication(m);
-        medEvents = medEvents.concat(repeated);
-      });
-
-      const apptEvents: CalendarEvent[] = appts.map((a) => {
-        const startDate = new Date(a.date);
-        const endDate = new Date(a.date);
-        endDate.setHours(endDate.getHours() + 1);
-        return {
-          id: `appt-${a.id}`,
-          title: `🗓️ Appt: ${a.appointment_name}`,
-          start: startDate,
-          end: endDate,
-          type: "appointment",
-        };
-      });
-
-      setEvents([...medEvents, ...apptEvents]);
-      setIsLoading(false);
+      if (importedCount > 0) {
+        toast.success(
+          `${importedCount} calendar event${
+            importedCount === 1 ? "" : "s"
+          } imported.`,
+        );
+      } else {
+        toast.error("No valid events could be imported.");
+      }
     } catch (error) {
-      toast.error("Error fetching data");
-      console.error("Error fetching data", error);
-      setIsLoading(false);
+      console.error("Error importing calendar:", error);
+      toast.error("Unable to import this calendar file.");
     } finally {
-      setIsLoading(false);
+      setIsSaving(false);
+      event.target.value = "";
     }
   }
 
-  /**
-   * Handle slot selection on the calendar
-   * This function sets the selected date and shows the dialog to select type
-   * of reminder to add (appointment or medication)
-   *
-   * @param slotInfo - The information about the selected slot
-   */
-  function handleSelectSlot(slotInfo: { start: Date; end: Date }) {
-    setSlotDate(slotInfo.start);
-    setShowSelectTypeDialog(true);
-  }
-
-  /**
-   * On select type - This function sets the type of reminder to add
-   * and initializes the date and time for the new reminder
-   *
-   * @param type - The type of reminder to add (appointment or medication)
-   */
-  function onSelectType(type: "appointment" | "medication") {
-    setAddType(type);
-    if (slotDate) {
-      const timeStr = format(slotDate, "HH:mm");
-      if (type === "appointment") {
-        setNewApptDate(slotDate);
-        setNewApptTime(timeStr);
-      } else {
-        setNewMedDate(slotDate);
-        setNewMedTimePicker(timeStr);
-        setNewMedRecurrence("As Needed");
-      }
-    }
-    setShowSelectTypeDialog(false);
-    setShowAddDialog(true);
-  }
-
-  /**
-   * Add Appointment
-   * This function creates a new appointment reminder and adds it to the events array
-   * It also sets the start and end times for the event
-   *
-   * @returns - A promise that resolves when the appointment is created
-   */
-  async function handleAddAppointment() {
-    if (!userId || !newApptName || !newApptDate) return;
-    try {
-      const dateString = format(newApptDate, "yyyy-MM-dd");
-      const dateTimeString = newApptTime
-        ? `${dateString}T${newApptTime}`
-        : dateString;
-      const localDate = new Date(dateTimeString);
-      const isoString = localDate.toISOString();
-      const created = await createAppointmentReminder({
-        user_profile_id: userId,
-        appointment_name: newApptName,
-        date: isoString,
-      });
-      const startDt = new Date(created.date);
-      const endDt = new Date(created.date);
-      endDt.setHours(endDt.getHours() + 1);
-      setEvents((prev) => [
-        ...prev,
-        {
-          id: `appt-${created.id}`,
-          title: `🗓️ Appt: ${created.appointment_name}`,
-          start: startDt,
-          end: endDt,
-          type: "appointment",
-        },
-      ]);
-      toast.success("Appointment reminder added successfully!");
-      sendBroadcast(
-        "appt-add",
-        `New appointment reminder ${created.appointment_name} added.`,
-      );
-      setShowAddDialog(false);
-      setNewApptName("");
-      setNewApptDate(undefined);
-      setNewApptTime("00:00");
-    } catch (err) {
-      toast.error("Error creating appointment reminder.");
-      console.error(err);
-    }
-  }
-
-  /**
-   * Add Medication
-   * This function creates a new medication reminder and expands it into multiple events
-   * based on its recurrence
-   *
-   * @returns - A promise that resolves when the medication is created
-   */
-  async function handleAddMedication() {
-    if (!userId || !newMedName || !newMedDate) return;
-    try {
-      if (!newMedRecurrence) {
-        setNewMedRecurrence("As Needed");
-      }
-      const dateString = format(newMedDate, "yyyy-MM-dd");
-      const combined = `${dateString}T${newMedTimePicker}`;
-      const combinedDosage = newMedDosage
-        ? `${newMedDosage} ${newMedDosageUnit}`
-        : "";
-      const localDate = new Date(combined);
-      const isoString = localDate.toISOString();
-      const created = await createMedicationReminder({
-        user_profile_id: userId,
-        medication_name: newMedName,
-        dosage: combinedDosage,
-        reminder_time: isoString,
-        recurrence: newMedRecurrence,
-        calendar_sync_token: null,
-      });
-      const repeated = expandMedication(created);
-      setEvents((prev) => [...prev, ...repeated]);
-      toast.success("Medication reminder added successfully!");
-      sendBroadcast(
-        "med-add",
-        `New medication reminder "${newMedName}" added.`,
-      );
-      setShowAddDialog(false);
-      setNewMedName("");
-      setNewMedDate(undefined);
-      setNewMedDosage("");
-      setNewMedTimePicker("00:00");
-      setNewMedRecurrence(null);
-    } catch (err) {
-      toast.error("Error creating medication reminder.");
-      console.error(err);
-    }
-  }
-
-  /**
-   * Handle event selection
-   * If selectMode is true, toggle the selected state of the event
-   * Otherwise, show the edit dialog
-   *
-   * @param ev - The selected event
-   * @returns - A promise that resolves when the event is selected
-   */
-  function handleSelectEvent(ev: CalendarEvent) {
-    if (selectMode) {
-      const newSet = new Set(selectedEventIds);
-      if (newSet.has(ev.id)) {
-        newSet.delete(ev.id);
-      } else {
-        newSet.add(ev.id);
-      }
-      setSelectedEventIds(newSet);
-      return;
-    }
-    setDialogEvent(ev);
-
-    if (ev.type === "medication") {
-      setEditTitle(ev.title.replace(/^💊 Med: /, ""));
-    } else {
-      setEditTitle(ev.title.replace(/^🗓️ Appt: /, ""));
-    }
-    setEditDate(ev.start);
-    setEditTime(format(ev.start, "HH:mm"));
-    setShowEventDialog(true);
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  function dayPropGetter(date: Date): React.HTMLAttributes<HTMLDivElement> {
-    return {
-      style: {
-        cursor: "pointer",
-      },
-    };
-  }
-
-  /**
-   * Event style getter
-   * If the event is selected, change the background color to something
-   * lighter
-   *
-   * @param event - The event to style
-   * @return - The style object for the event
-   */
   function eventPropGetter(event: CalendarEvent) {
-    const style: React.CSSProperties = {
+    const isSelected = selectedEventIds.has(event.id);
+    const isMedication = event.type === "medication";
+
+    const style: CSSProperties = {
+      backgroundColor: isMedication ? "#e8eef2" : "#e9ebf2",
+      color: isMedication ? "#405f73" : "#555d79",
+      border: isSelected
+        ? "2px solid #405f73"
+        : "1px solid transparent",
+      borderRadius: "7px",
+      padding: "3px 6px",
+      fontSize: "12px",
+      fontWeight: 600,
       cursor: "pointer",
-      backgroundColor: "#344966",
     };
-    if (selectedEventIds.has(event.id)) {
-      style.backgroundColor = "#4a5a75";
-      style.border = "2px solid #FF577F";
-    }
+
     return { style };
   }
 
-  /**
-   * Save event edits
-   * For appointments, only update the single event
-   * For medications, update the entire series
-   *
-   * @returns - A promise that resolves when the event is saved
-   */
-  async function handleSaveEventEdits() {
-    if (!dialogEvent || !userId || !editDate) return;
-    const dateString = format(editDate, "yyyy-MM-dd");
-    const dateTimeString = `${dateString}T${editTime}`;
-    const localDate = new Date(dateTimeString);
-    const isoString = localDate.toISOString();
+  const medicationCount = events.filter(
+    (event) => event.type === "medication",
+  ).length;
 
-    try {
-      const [type, ...rest] = dialogEvent.id.split("-");
-      if (type === "appt") {
-        const realId = rest.join("-");
-        const updated = await updateAppointmentReminder(realId, {
-          appointment_name: editTitle,
-          date: isoString,
-        });
-        setEvents((prev) =>
-          prev.map((e) => {
-            if (e.id === dialogEvent.id) {
-              const newEnd = new Date(updated.date);
-              newEnd.setHours(newEnd.getHours() + 1);
-              return {
-                ...e,
-                title: `🗓️ Appt: ${updated.appointment_name}`,
-                start: new Date(updated.date),
-                end: newEnd,
-              };
-            }
-            return e;
-          }),
-        );
-        sendBroadcast(
-          "appt-update",
-          `Appointment reminder "${editTitle}" updated successfully.`,
-        );
-        toast.success("Appointment updated successfully!");
-      } else {
-        const withoutPrefix = dialogEvent.id.slice(4);
-        const lastDash = withoutPrefix.lastIndexOf("-");
-        const realIdMed = withoutPrefix.substring(0, lastDash);
+  const appointmentCount = events.filter(
+    (event) => event.type === "appointment",
+  ).length;
 
-        const updated = await updateMedicationReminder(realIdMed, {
-          medication_name: editTitle,
-          dosage: `${editMedDosage} ${editMedDosageUnit}`,
-          reminder_time: isoString,
-          recurrence: editMedRecurrence,
-        });
-
-        const newEventsForMed = expandMedication(updated);
-        setEvents((prev) => {
-          const filtered = prev.filter((e) => {
-            if (e.type === "medication") {
-              return !e.id.startsWith(`med-${realIdMed}`);
-            }
-            return true;
-          });
-          return [...filtered, ...newEventsForMed];
-        });
-        sendBroadcast(
-          "med-update",
-          `Medication reminder "${editTitle}" updated successfully.`,
-        );
-        toast.success("Medication reminder updated successfully!");
-      }
-      setShowEventDialog(false);
-    } catch (err) {
-      toast.error("Error updating medication reminder.");
-      console.error(err);
-    }
-  }
-
-  /**
-   * Delete event
-   * For appointments, delete the single event
-   * For medications, delete the entire series
-   */
-  function handleDeleteSingle() {
-    if (!dialogEvent) return;
-    setDeleteTargetIds([dialogEvent.id]);
-    setShowConfirmDeleteDialog(true);
-  }
-
-  /**
-   * Delete selected events
-   * If no events are selected, do nothing
-   * Otherwise, set the delete target IDs and show the confirmation dialog
-   */
-  function handleDeleteSelected() {
-    if (selectedEventIds.size === 0) return;
-    setDeleteTargetIds(Array.from(selectedEventIds));
-    setShowConfirmDeleteDialog(true);
-  }
-
-  /**
-   * Delete events
-   * For appointments, delete the single event
-   * For medications, delete the entire series
-   * For both, remove from the events array
-   * and update the state
-   */
-  async function doDeleteEvents() {
-    try {
-      const appointmentIdsToDelete = new Set();
-      const medicationIdsToDelete = new Set();
-      for (const eId of deleteTargetIds) {
-        if (eId.startsWith("appt-")) {
-          const realId = eId.slice(5);
-          appointmentIdsToDelete.add(realId);
-        } else if (eId.startsWith("med-")) {
-          const withoutPrefix = eId.slice(4);
-          const lastDash = withoutPrefix.lastIndexOf("-");
-          const realId = withoutPrefix.substring(0, lastDash);
-          medicationIdsToDelete.add(realId);
-        }
-      }
-      for (const apptId of appointmentIdsToDelete) {
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
-        await deleteAppointmentReminder(apptId);
-        sendBroadcast(
-          "appt-delete",
-          `Appointment reminder deleted successfully.`,
-        );
-      }
-      for (const medId of medicationIdsToDelete) {
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
-        await deleteMedicationReminder(medId);
-        sendBroadcast(
-          "med-delete",
-          `Medication reminder deleted successfully.`,
-        );
-      }
-      toast.success("Deleted events");
-      setEvents((prev) =>
-        prev.filter((evt) => {
-          if (evt.type === "appointment") {
-            const evtId = evt.id.slice(5);
-            return !appointmentIdsToDelete.has(evtId);
-          } else if (evt.type === "medication") {
-            const withoutPrefix = evt.id.slice(4);
-            const lastDash = withoutPrefix.lastIndexOf("-");
-            const medId = withoutPrefix.substring(0, lastDash);
-            return !medicationIdsToDelete.has(medId);
-          }
-          return true;
-        }),
-      );
-      setSelectedEventIds(new Set());
-    } catch (err) {
-      toast.error("Error deleting events");
-      console.error(err);
-    }
-    setShowConfirmDeleteDialog(false);
-    setShowEventDialog(false);
-    setSelectMode(false);
-  }
-
-  /**
-   * Export the entire calendar as an ICS file
-   */
-  async function handleExportCalendar() {
-    const icsString = generateIcs(events);
-    const blob = new Blob([icsString], { type: "text/calendar;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "calendar.ics";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }
+  const calendarMessages = {
+    today: "Today",
+    previous: "Back",
+    next: "Next",
+    month: "Month",
+    week: "Week",
+    day: "Day",
+    agenda: "Agenda",
+    date: "Date",
+    time: "Time",
+    event: "Event",
+    noEventsInRange: "No reminders scheduled in this range.",
+    showMore: (total: number) => `+${total} more`,
+  };
 
   return (
     <>
@@ -970,539 +1002,840 @@ export default function CalendarPage() {
         <title>SymptomSync | Calendar</title>
         <meta
           name="description"
-          content="Manage your appointments & medications easily"
+          content="Manage your appointments and medication reminders in one calendar."
         />
       </Head>
 
-      <motion.div
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
-        className="relative w-full h-screen p-4 md:p-6 space-y-4"
-      >
-        <style jsx global>{`
-          html {
-            scroll-behavior: smooth;
-          }
+      <div className="min-h-screen bg-[#f7f8f8] text-[#27333b]">
+        <main className="mx-auto w-full max-w-6xl px-5 py-8 sm:px-8 lg:py-10">
+          {/* Page header */}
+          <div className="mb-8">
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <div className="mb-3 flex items-center gap-2">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#e6edf2] text-[#405f73]">
+                    <CalendarDays size={19} />
+                  </div>
+                  <span className="text-sm font-semibold tracking-wide text-[#587587]">
+                    YOUR HEALTH RECORDS
+                  </span>
+                </div>
 
-          html,
-          body {
-            overscroll-behavior: none;
-          }
-        `}</style>
-        {isLoading && (
-          <>
-            <div className="absolute inset-0 z-50 bg-background bg-opacity-50" />
+                <h1 className="text-3xl font-semibold tracking-tight text-[#27333b] sm:text-4xl">
+                  Your calendar
+                </h1>
 
-            <div
-              className="absolute left-1/2 z-50"
-              style={{ top: "50vh", transform: "translateX(-50%)" }}
-            >
-              <Loader2 className="w-16 h-16 text-primary animate-spin" />
-            </div>
-          </>
-        )}
-
-        <div className="flex flex-wrap items-center justify-between gap-4 p-2 mb-6">
-          <motion.div variants={slideInLeft} className="flex flex-col">
-            <h1 className="text-3xl font-extrabold">Calendar 📆</h1>
-            <motion.p
-              variants={fadeInUp}
-              className="text-foreground mt-2 text-center md:text-left"
-            >
-              Manage your appointments & medications easily
-            </motion.p>
-          </motion.div>
-
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="default"
-              onClick={() => {
-                setAddType("appointment");
-                setShowAddDialog(true);
-              }}
-              className="hover:-translate-y-1 transition-transform duration-300 cursor-pointer"
-            >
-              <CalendarIcon className="w-4 h-4ZZZZZ" /> Add Appointment
-            </Button>
-            <Button
-              variant="default"
-              onClick={() => {
-                setAddType("medication");
-                setShowAddDialog(true);
-              }}
-              className="hover:-translate-y-1 transition-transform duration-300 cursor-pointer"
-            >
-              <Pill className="w-4 h-4ZZZZZ" /> Add Medication
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => setShowIcsDialog(true)}
-              className="hover:-translate-y-1 transition-transform duration-300 cursor-pointer"
-            >
-              <Download className="w-4 h-4ZZZZZ" /> ICS Sync
-            </Button>
-            <Button
-              variant="secondary"
-              className="hover:-translate-y-1 transition-transform duration-300 cursor-pointer"
-              onClick={() => {
-                setSelectMode(!selectMode);
-                if (selectMode) setSelectedEventIds(new Set());
-              }}
-            >
-              {selectMode ? (
-                <>
-                  <XSquare className="w-4 h-4ZZZZZ" /> Cancel Selection
-                </>
-              ) : (
-                <>
-                  <CheckSquare className="w-4 h-4ZZZZZ" /> Select Multiple
-                </>
-              )}
-            </Button>
-            {selectMode && selectedEventIds.size > 0 && (
-              <Button
-                variant="destructive"
-                className="hover:-translate-y-1 transition-transform duration-300 cursor-pointer"
-                onClick={handleDeleteSelected}
-              >
-                <Trash2 className="w-4 h-4ZZZZZ" /> Delete{" "}
-                {selectedEventIds.size} Selected
-              </Button>
-            )}
-          </div>
-        </div>
-
-        <motion.div
-          variants={fadeInUp}
-          initial="hidden"
-          animate="visible"
-          className="bg-popover p-2 rounded-lg shadow-md"
-          style={{ height: "calc(100vh - 12rem)" }}
-        >
-          <Calendar
-            localizer={localizer}
-            events={events}
-            startAccessor="start"
-            endAccessor="end"
-            views={["month", "week", "day", "agenda"]}
-            style={{ height: "100%", width: "100%", pointerEvents: "auto" }}
-            selectable
-            onSelectEvent={handleSelectEvent}
-            onSelectSlot={handleSelectSlot}
-            eventPropGetter={eventPropGetter}
-            dayPropGetter={dayPropGetter}
-          />
-        </motion.div>
-
-        <Dialog open={showIcsDialog} onOpenChange={setShowIcsDialog}>
-          <DialogContent className="max-w-lg w-full max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>ICS Import/Export</DialogTitle>
-              <DialogDescription>
-                Use this tool to export your calendar as an ICS file to sync
-                with another calendar service, or import an ICS file from
-                another provider into your SymptomSync calendar.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-6 py-4">
-              <div className="p-4 bg-white rounded shadow">
-                <h3 className="text-lg font-semibold mb-2">
-                  Export Your Calendar
-                </h3>
-                <p className="text-sm mb-4">
-                  Download an ICS file containing all your events. You can then
-                  manually import this file into Google Calendar, Outlook, or
-                  Apple Calendar.
+                <p className="mt-2 max-w-xl text-sm leading-6 text-[#69747b] sm:text-base">
+                  Keep your appointments and medication reminders organized
+                  in one place.
                 </p>
-                <Button
-                  variant="default"
-                  onClick={handleExportCalendar}
-                  className="cursor-pointer hover:-translate-y-1 transition-transform duration-300"
-                >
-                  <Download className="w-4 h-4 mr-1" /> Download ICS File
-                </Button>
               </div>
-              <div className="border-t border-gray-200"></div>
 
-              <div className="p-4 bg-white rounded shadow">
-                <h3 className="text-lg font-semibold mb-2">Import Calendar</h3>
-                <p className="text-sm mb-4">
-                  To import events from your other calendar, export an ICS file
-                  from your calendar provider:
-                  <br />
-                  <span className="block mt-2">
-                    <strong>- Google Calendar:</strong> Open Google Calendar,
-                    click the gear icon, then &quot;Settings&quot;. Go to
-                    &quot;Import &amp; Export&quot; and click &quot;Export&quot;
-                    to download a ZIP file containing your calendars in ICS
-                    format.
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-2 rounded-full border border-[#e4e8e9] bg-white px-3.5 py-2 text-sm text-[#587587]">
+                  <Pill size={15} />
+                  <span className="font-medium">
+                    {medicationCount} medications
                   </span>
-                  <span className="block mt-2">
-                    <strong>- Outlook:</strong> Open Outlook Calendar, click on
-                    &quot;File&quot;, then &quot;Save Calendar&quot;, and choose
-                    the ICS format.
+                </div>
+
+                <div className="flex items-center gap-2 rounded-full border border-[#e4e8e9] bg-white px-3.5 py-2 text-sm text-[#626b83]">
+                  <CalendarDays size={15} />
+                  <span className="font-medium">
+                    {appointmentCount} appointments
                   </span>
-                  <span className="block mt-2">
-                    <strong>- Apple Calendar (iCal):</strong> In Apple Calendar,
-                    choose &quot;File&quot; &gt; &quot;Export&quot; &gt;
-                    &quot;Export…&quot; to save your calendar as an ICS file.
-                  </span>
-                  <br />
-                  Only events occurring within the past year will be imported.
-                </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Calendar actions */}
+          <section className="mb-5 flex flex-col gap-4 rounded-2xl border border-[#e4e8e9] bg-white p-4 shadow-[0_2px_10px_rgba(39,51,59,0.03)] sm:flex-row sm:items-center sm:justify-between sm:p-5">
+            <div>
+              <h2 className="text-base font-semibold text-[#27333b]">
+                Calendar overview
+              </h2>
+              <p className="mt-1 text-sm text-[#7a858b]">
+                Select a date to add a reminder, or select an event to edit it.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={() => openAddDialog("appointment")}
+                className="cursor-pointer rounded-full bg-[#405f73] px-4 text-white"
+              >
+                <Plus size={16} className="mr-1.5" />
+                Appointment
+              </Button>
+
+              <Button
+                onClick={() => openAddDialog("medication")}
+                variant="outline"
+                className="cursor-pointer rounded-full border-[#dce4e8] text-[#405f73]"
+              >
+                <Pill size={16} className="mr-1.5" />
+                Medication
+              </Button>
+
+              <Button
+                onClick={() => setShowIcsDialog(true)}
+                variant="outline"
+                className="cursor-pointer rounded-full border-[#e4e8e9] text-[#69747b]"
+              >
+                <Download size={16} className="mr-1.5" />
+                Import / Export
+              </Button>
+            </div>
+          </section>
+
+          {/* Calendar legend and selection controls */}
+          <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-1 text-xs font-medium text-[#69747b]">
+              <span className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-sm bg-[#718b9b]" />
+                Medication
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-sm bg-[#9298b0]" />
+                Appointment
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {selectMode && selectedEventIds.size > 0 && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={requestDeleteSelected}
+                  className="cursor-pointer rounded-full"
+                >
+                  <Trash2 size={14} className="mr-1.5" />
+                  Delete selected ({selectedEventIds.size})
+                </Button>
+              )}
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSelectMode((previous) => !previous);
+                  setSelectedEventIds(new Set());
+                }}
+                className="cursor-pointer rounded-full border-[#e4e8e9] bg-white text-[#69747b]"
+              >
+                {selectMode ? (
+                  <>
+                    <X size={14} className="mr-1.5" />
+                    Exit selection
+                  </>
+                ) : (
+                  <>
+                    <Check size={14} className="mr-1.5" />
+                    Select events
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+
+          {/* Calendar */}
+          <section className="relative min-h-[620px] rounded-2xl border border-[#e4e8e9] bg-white p-3 shadow-[0_2px_10px_rgba(39,51,59,0.03)] sm:p-5">
+            {isLoading && (
+              <div className="absolute inset-0 z-20 flex items-center justify-center rounded-2xl bg-white/75">
+                <div className="flex flex-col items-center gap-3">
+                  <Loader2 className="h-8 w-8 animate-spin text-[#587587]" />
+                  <p className="text-sm text-[#69747b]">
+                    Loading your calendar...
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="symptomsync-calendar">
+              <Calendar<CalendarEvent>
+                localizer={localizer}
+                events={events}
+                startAccessor="start"
+                endAccessor="end"
+                views={["month", "week", "day", "agenda"]}
+                defaultView="month"
+                selectable
+                onSelectEvent={openEventDialog}
+                onSelectSlot={handleSelectSlot}
+                eventPropGetter={eventPropGetter}
+                messages={calendarMessages}
+                popup
+                style={{ minHeight: "590px" }}
+              />
+            </div>
+          </section>
+
+          <p className="mt-3 px-1 text-xs leading-5 text-[#899399]">
+            Medication events are displayed according to their recurrence
+            settings for the next 90 days. Select a medication event to edit or
+            delete its reminder series.
+          </p>
+        </main>
+      </div>
+
+      {/* Add reminder dialog */}
+      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+        <DialogContent className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg overflow-y-auto rounded-2xl border-[#e4e8e9] bg-white p-5 sm:p-6">
+          <DialogHeader>
+            <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-[#e6edf2] text-[#405f73]">
+              {addType === "appointment" ? (
+                <CalendarDays size={19} />
+              ) : (
+                <Pill size={19} />
+              )}
+            </div>
+
+            <DialogTitle className="text-xl font-semibold text-[#27333b]">
+              Add {addType === "appointment" ? "appointment" : "medication"}
+            </DialogTitle>
+
+            <DialogDescription className="text-sm leading-6 text-[#69747b]">
+              {addType === "appointment"
+                ? "Add an upcoming appointment to your calendar."
+                : "Add a medication and choose when its reminder should appear."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {addType === "appointment" ? (
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-[#40505a]">
+                  Appointment name
+                </Label>
                 <Input
-                  type="file"
-                  accept=".ics"
-                  className="cursor-pointer"
-                  onChange={(e) => {
-                    if (userId) {
-                      handleImportIcs(e, userId, async () => {
-                        await fetchAllData(userId);
-                      });
-                    }
-                  }}
+                  value={newApptName}
+                  onChange={(event) => setNewApptName(event.target.value)}
+                  placeholder="e.g. Annual check-up"
+                  className="h-11 rounded-xl border-[#e4e8e9] focus-visible:ring-[#718b9b]"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-[#40505a]">
+                  Date
+                </Label>
+                <DatePicker
+                  value={newApptDate}
+                  onChange={setNewApptDate}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-[#40505a]">
+                  Time
+                </Label>
+                <CustomTimePicker
+                  value={newApptTime}
+                  onChange={setNewApptTime}
                 />
               </div>
             </div>
-            <DialogFooter>
-              <Button
-                variant="secondary"
-                className="cursor-pointer"
-                onClick={() => setShowIcsDialog(false)}
-              >
-                Close
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          ) : (
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-[#40505a]">
+                  Medication name
+                </Label>
+                <Input
+                  value={newMedName}
+                  onChange={(event) => setNewMedName(event.target.value)}
+                  placeholder="e.g. Ibuprofen"
+                  className="h-11 rounded-xl border-[#e4e8e9] focus-visible:ring-[#718b9b]"
+                />
+              </div>
 
-        <Dialog
-          open={showSelectTypeDialog}
-          onOpenChange={setShowSelectTypeDialog}
-        >
-          <DialogContent className="max-w-sm w-full max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Create a New Reminder</DialogTitle>
-              <DialogDescription>
-                Select which type of reminder to create.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button
-                variant="secondary"
-                className="cursor-pointer"
-                onClick={() => setShowSelectTypeDialog(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="default"
-                className="cursor-pointer"
-                onClick={() => onSelectType("appointment")}
-              >
-                Appointment
-              </Button>
-              <Button
-                variant="default"
-                className="cursor-pointer"
-                onClick={() => onSelectType("medication")}
-              >
-                Medication
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-          <DialogContent className="max-w-lg w-full max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>
-                {addType === "appointment"
-                  ? "Add New Appointment"
-                  : "Add New Medication"}
-              </DialogTitle>
-              <DialogDescription>
-                {addType === "appointment"
-                  ? "Provide appointment info and date/time."
-                  : "Add medication info, date/time, and recurrence."}
-              </DialogDescription>
-            </DialogHeader>
-            {addType === "appointment" ? (
-              <div className="grid gap-4 py-4">
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label>Appointment Info</Label>
-                  <Input
-                    value={newApptName}
-                    onChange={(e) => setNewApptName(e.target.value)}
-                    placeholder="e.g. Check-up with Dr. Smith"
+                  <Label className="text-sm font-medium text-[#40505a]">
+                    Date
+                  </Label>
+                  <DatePicker
+                    value={newMedDate}
+                    onChange={setNewMedDate}
                   />
                 </div>
+
                 <div className="space-y-2">
-                  <Label>Date</Label>
-                  <DatePicker value={newApptDate} onChange={setNewApptDate} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Time (24h)</Label>
+                  <Label className="text-sm font-medium text-[#40505a]">
+                    Time
+                  </Label>
                   <CustomTimePicker
-                    value={newApptTime}
-                    onChange={setNewApptTime}
+                    value={newMedTime}
+                    onChange={setNewMedTime}
                   />
                 </div>
               </div>
-            ) : (
-              <div className="grid gap-4 py-4">
-                <div className="space-y-2">
-                  <Label>Medication Name</Label>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-[#40505a]">
+                  Dosage
+                </Label>
+                <div className="flex gap-2">
                   <Input
-                    value={newMedName}
-                    onChange={(e) => setNewMedName(e.target.value)}
-                    placeholder="e.g. Ibuprofen"
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={newMedDosage}
+                    onChange={(event) =>
+                      setNewMedDosage(event.target.value)
+                    }
+                    placeholder="e.g. 200"
+                    className="h-11 rounded-xl border-[#e4e8e9] focus-visible:ring-[#718b9b]"
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label>Schedule (Date & Time)</Label>
-                  <div className="mb-2">
-                    <Label className="text-xs">Date</Label>
-                    <DatePicker value={newMedDate} onChange={setNewMedDate} />
-                  </div>
-                  <div>
-                    <Label className="text-xs">Time (24h)</Label>
-                    <CustomTimePicker
-                      value={newMedTimePicker}
-                      onChange={setNewMedTimePicker}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Dosage</Label>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="number"
-                      min="0"
-                      max="1000"
-                      step="0.1"
-                      value={newMedDosage}
-                      onChange={(e) => setNewMedDosage(e.target.value)}
-                      placeholder="e.g. 200"
-                    />
-                    <Select
-                      value={newMedDosageUnit}
-                      onValueChange={setNewMedDosageUnit}
-                    >
-                      <SelectTrigger className="w-full border border-input rounded px-2 py-1">
-                        <SelectValue placeholder="Select unit" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="mg">mg</SelectItem>
-                        <SelectItem value="ml">ml</SelectItem>
-                        <SelectItem value="g">g</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Recurrence</Label>
+
                   <Select
-                    value={newMedRecurrence ?? undefined}
-                    onValueChange={setNewMedRecurrence}
+                    value={newMedDosageUnit}
+                    onValueChange={setNewMedDosageUnit}
                   >
-                    <SelectTrigger className="w-full border border-input rounded px-2 py-1">
-                      <SelectValue placeholder="Select recurrence" />
+                    <SelectTrigger className="h-11 w-28 rounded-xl border-[#e4e8e9]">
+                      <SelectValue placeholder="Unit" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="as-needed">As Needed</SelectItem>
-                      <SelectItem value="Daily">Daily</SelectItem>
-                      <SelectItem value="Weekly">Weekly</SelectItem>
-                      <SelectItem value="Biweekly">Biweekly</SelectItem>
-                      <SelectItem value="Monthly">Monthly</SelectItem>
+                      <SelectItem value="mg">mg</SelectItem>
+                      <SelectItem value="ml">ml</SelectItem>
+                      <SelectItem value="g">g</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
-            )}
-            <DialogFooter>
-              <Button
-                variant="secondary"
-                className="cursor-pointer"
-                onClick={() => setShowAddDialog(false)}
-              >
-                Cancel
-              </Button>
-              {addType === "appointment" ? (
-                <Button
-                  variant="default"
-                  onClick={handleAddAppointment}
-                  className="cursor-pointer"
-                  disabled={!newApptName || !newApptDate}
-                >
-                  Save
-                </Button>
-              ) : (
-                <Button
-                  variant="default"
-                  onClick={handleAddMedication}
-                  className="cursor-pointer"
-                  disabled={!newMedName || !newMedDate}
-                >
-                  Save
-                </Button>
-              )}
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
 
-        <Dialog open={showEventDialog} onOpenChange={setShowEventDialog}>
-          <DialogContent className="max-w-lg w-full max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Event Details</DialogTitle>
-              <DialogDescription>
-                Edit or delete the event below.
-              </DialogDescription>
-            </DialogHeader>
-            {dialogEvent && (
-              <div className="grid gap-4 py-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-[#40505a]">
+                  Recurrence
+                </Label>
+                <Select
+                  value={newMedRecurrence}
+                  onValueChange={setNewMedRecurrence}
+                >
+                  <SelectTrigger className="h-11 rounded-xl border-[#e4e8e9]">
+                    <SelectValue placeholder="Choose a schedule" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {recurrenceOptions.map((option) => (
+                      <SelectItem
+                        key={option.value}
+                        value={option.value}
+                      >
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowAddDialog(false)}
+              disabled={isSaving}
+              className="cursor-pointer rounded-full border-[#e4e8e9]"
+            >
+              Cancel
+            </Button>
+
+            <Button
+              onClick={
+                addType === "appointment"
+                  ? handleAddAppointment
+                  : handleAddMedication
+              }
+              disabled={
+                isSaving ||
+                (addType === "appointment"
+                  ? !newApptName.trim() || !newApptDate
+                  : !newMedName.trim() || !newMedDate)
+              }
+              className="cursor-pointer rounded-full bg-[#405f73] text-white"
+            >
+              {isSaving && (
+                <Loader2 size={15} className="mr-2 animate-spin" />
+              )}
+              Save reminder
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit event dialog */}
+      <Dialog
+        open={showEventDialog}
+        onOpenChange={(open) => {
+          if (!isSaving) setShowEventDialog(open);
+        }}
+      >
+        <DialogContent className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg overflow-y-auto rounded-2xl border-[#e4e8e9] bg-white p-5 sm:p-6">
+          <DialogHeader>
+            <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-[#e6edf2] text-[#405f73]">
+              {dialogEvent?.type === "medication" ? (
+                <Pill size={19} />
+              ) : (
+                <CalendarDays size={19} />
+              )}
+            </div>
+
+            <DialogTitle className="text-xl font-semibold text-[#27333b]">
+              Edit {dialogEvent?.type === "medication" ? "medication" : "appointment"}
+            </DialogTitle>
+
+            <DialogDescription className="text-sm leading-6 text-[#69747b]">
+              Update the reminder details or delete this reminder.
+              {dialogEvent?.type === "medication" &&
+                " Changes apply to the entire medication series."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {dialogEvent && (
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-[#40505a]">
+                  {dialogEvent.type === "medication"
+                    ? "Medication name"
+                    : "Appointment name"}
+                </Label>
+                <Input
+                  value={editTitle}
+                  onChange={(event) => setEditTitle(event.target.value)}
+                  className="h-11 rounded-xl border-[#e4e8e9] focus-visible:ring-[#718b9b]"
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label>
-                    {dialogEvent.type === "appointment"
-                      ? "Appointment"
-                      : "Medication"}{" "}
-                    Title
+                  <Label className="text-sm font-medium text-[#40505a]">
+                    Date
                   </Label>
-                  <Input
-                    value={editTitle}
-                    onChange={(e) => setEditTitle(e.target.value)}
-                    placeholder="Enter title"
+                  <DatePicker
+                    value={editDate}
+                    onChange={setEditDate}
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Date</Label>
-                  <DatePicker value={editDate} onChange={setEditDate} />
+                  <Label className="text-sm font-medium text-[#40505a]">
+                    Time
+                  </Label>
+                  <CustomTimePicker
+                    value={editTime}
+                    onChange={setEditTime}
+                  />
                 </div>
+              </div>
 
-                <div className="space-y-2">
-                  <Label>Time (24h)</Label>
-                  <CustomTimePicker value={editTime} onChange={setEditTime} />
-                </div>
+              {dialogEvent.type === "medication" && (
+                <>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-[#40505a]">
+                      Dosage
+                    </Label>
+                    <div className="flex gap-2">
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        value={editMedDosage}
+                        onChange={(event) =>
+                          setEditMedDosage(event.target.value)
+                        }
+                        placeholder="e.g. 200"
+                        className="h-11 rounded-xl border-[#e4e8e9] focus-visible:ring-[#718b9b]"
+                      />
 
-                {dialogEvent.type === "medication" && (
-                  <>
-                    <div className="space-y-2">
-                      <Label>Dosage</Label>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="number"
-                          min="0"
-                          max="1000"
-                          step="0.1"
-                          value={editMedDosage}
-                          onChange={(e) => setEditMedDosage(e.target.value)}
-                          placeholder="e.g. 200"
-                        />
-                        <Select
-                          value={editMedDosageUnit}
-                          onValueChange={setEditMedDosageUnit}
-                        >
-                          <SelectTrigger className="w-full border border-input rounded px-2 py-1">
-                            <SelectValue placeholder="Select unit" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="mg">mg</SelectItem>
-                            <SelectItem value="ml">ml</SelectItem>
-                            <SelectItem value="g">g</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Recurrence</Label>
                       <Select
-                        value={editMedRecurrence}
-                        onValueChange={setEditMedRecurrence}
+                        value={editMedDosageUnit}
+                        onValueChange={setEditMedDosageUnit}
                       >
-                        <SelectTrigger className="w-full border border-input rounded px-2 py-1">
-                          <SelectValue placeholder="Select recurrence" />
+                        <SelectTrigger className="h-11 w-28 rounded-xl border-[#e4e8e9]">
+                          <SelectValue placeholder="Unit" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="as-needed">As Needed</SelectItem>
-                          <SelectItem value="Daily">Daily</SelectItem>
-                          <SelectItem value="Weekly">Weekly</SelectItem>
-                          <SelectItem value="Biweekly">Biweekly</SelectItem>
-                          <SelectItem value="Monthly">Monthly</SelectItem>
+                          <SelectItem value="mg">mg</SelectItem>
+                          <SelectItem value="ml">ml</SelectItem>
+                          <SelectItem value="g">g</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
-                  </>
-                )}
-              </div>
-            )}
-            <DialogFooter>
-              <Button
-                variant="secondary"
-                className="cursor-pointer"
-                onClick={() => setShowEventDialog(false)}
-              >
-                Close
-              </Button>
-              {dialogEvent && (
-                <>
-                  <Button
-                    variant="default"
-                    className="cursor-pointer"
-                    onClick={handleSaveEventEdits}
-                    disabled={!editTitle || !editDate || !editTime}
-                  >
-                    <Edit3 className="w-4 h-4 mr-1" /> Save Changes
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    className="cursor-pointer"
-                    onClick={handleDeleteSingle}
-                  >
-                    <Trash2 className="w-4 h-4 mr-1" /> Delete
-                  </Button>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-[#40505a]">
+                      Recurrence
+                    </Label>
+                    <Select
+                      value={editMedRecurrence}
+                      onValueChange={setEditMedRecurrence}
+                    >
+                      <SelectTrigger className="h-11 rounded-xl border-[#e4e8e9]">
+                        <SelectValue placeholder="Choose a schedule" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {recurrenceOptions.map((option) => (
+                          <SelectItem
+                            key={option.value}
+                            value={option.value}
+                          >
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </>
               )}
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            </div>
+          )}
 
-        <Dialog
-          open={showConfirmDeleteDialog}
-          onOpenChange={setShowConfirmDeleteDialog}
-        >
-          <DialogContent className="max-w-sm w-full">
-            <DialogHeader>
-              <DialogTitle>Confirm Deletion</DialogTitle>
-              <DialogDescription>
-                Are you sure you want to delete {deleteTargetIds.length}{" "}
-                event(s)? Deleting the event(s) will also delete all events in
-                the series.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
+          <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-between sm:gap-2">
+            <Button
+              variant="outline"
+              onClick={requestDeleteEvent}
+              disabled={isSaving}
+              className="cursor-pointer rounded-full border-[#eadada] text-[#a34d4d] hover:bg-[#fbf3f3] hover:text-[#923d3d]"
+            >
+              <Trash2 size={15} className="mr-1.5" />
+              Delete
+            </Button>
+
+            <div className="flex gap-2">
               <Button
-                variant="secondary"
-                className="cursor-pointer"
-                onClick={() => setShowConfirmDeleteDialog(false)}
+                variant="outline"
+                onClick={() => setShowEventDialog(false)}
+                disabled={isSaving}
+                className="cursor-pointer rounded-full border-[#e4e8e9]"
               >
                 Cancel
               </Button>
+
               <Button
-                variant="destructive"
-                className="cursor-pointer"
-                onClick={doDeleteEvents}
+                onClick={handleSaveEventEdits}
+                disabled={isSaving || !editTitle.trim() || !editDate}
+                className="cursor-pointer rounded-full bg-[#405f73] text-white hover:bg-[#324e60]"
               >
-                Yes, Delete
+                {isSaving ? (
+                  <Loader2 size={15} className="mr-2 animate-spin" />
+                ) : (
+                  <Pencil size={14} className="mr-2" />
+                )}
+                Save changes
               </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </motion.div>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation dialog */}
+      <Dialog
+        open={showDeleteDialog}
+        onOpenChange={(open) => {
+          if (!isSaving) setShowDeleteDialog(open);
+        }}
+      >
+        <DialogContent className="w-[calc(100%-2rem)] max-w-sm rounded-2xl border-[#e4e8e9] bg-white p-5 sm:p-6">
+          <DialogHeader>
+            <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-[#f8eeee] text-[#a34d4d]">
+              <Trash2 size={18} />
+            </div>
+
+            <DialogTitle className="text-lg font-semibold text-[#27333b]">
+              Delete reminder{deleteTargetIds.length === 1 ? "" : "s"}?
+            </DialogTitle>
+
+            <DialogDescription className="text-sm leading-6 text-[#69747b]">
+              {deleteTargetIds.length === 1
+                ? "This will permanently delete this reminder."
+                : `This will permanently delete ${deleteTargetIds.length} selected calendar events. Medication events are deleted as complete reminder series.`}
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteDialog(false)}
+              disabled={isSaving}
+              className="cursor-pointer rounded-full border-[#e4e8e9]"
+            >
+              Cancel
+            </Button>
+
+            <Button
+              variant="destructive"
+              onClick={handleDeleteEvents}
+              disabled={isSaving}
+              className="cursor-pointer rounded-full"
+            >
+              {isSaving && (
+                <Loader2 size={15} className="mr-2 animate-spin" />
+              )}
+              Delete reminder
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ICS import/export dialog */}
+      <Dialog open={showIcsDialog} onOpenChange={setShowIcsDialog}>
+        <DialogContent className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg overflow-y-auto rounded-2xl border-[#e4e8e9] bg-white p-5 sm:p-6">
+          <DialogHeader>
+            <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-[#e6edf2] text-[#405f73]">
+              <Download size={19} />
+            </div>
+
+            <DialogTitle className="text-xl font-semibold text-[#27333b]">
+              Calendar import & export
+            </DialogTitle>
+
+            <DialogDescription className="text-sm leading-6 text-[#69747b]">
+              Transfer your SymptomSync reminders to or from another calendar
+              application using an ICS file.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-3">
+            <div className="rounded-xl border border-[#e4e8e9] bg-[#fbfcfc] p-4">
+              <div className="mb-2 flex items-center gap-2 text-[#405f73]">
+                <Download size={17} />
+                <h3 className="font-semibold text-[#27333b]">
+                  Export your calendar
+                </h3>
+              </div>
+
+              <p className="mb-4 text-sm leading-6 text-[#69747b]">
+                Download your current calendar events as an ICS file. You can
+                import it into Google Calendar, Outlook, or Apple Calendar.
+              </p>
+
+              <Button
+                onClick={handleExportCalendar}
+                className="cursor-pointer rounded-full bg-[#405f73] text-white hover:bg-[#324e60]"
+              >
+                <Download size={15} className="mr-2" />
+                Download ICS file
+              </Button>
+            </div>
+
+            <div className="rounded-xl border border-[#e4e8e9] bg-[#fbfcfc] p-4">
+              <div className="mb-2 flex items-center gap-2 text-[#405f73]">
+                <FileUp size={17} />
+                <h3 className="font-semibold text-[#27333b]">
+                  Import a calendar
+                </h3>
+              </div>
+
+              <p className="mb-4 text-sm leading-6 text-[#69747b]">
+                Select an ICS file exported from another calendar. Events
+                dated within the past year are imported. Events labeled
+                &quot;Med:&quot; or &quot;Medication:&quot; are treated as
+                medication reminders; other events are imported as
+                appointments.
+              </p>
+
+              <Input
+                type="file"
+                accept=".ics,text/calendar"
+                onChange={handleImportCalendar}
+                disabled={isSaving}
+                className="cursor-pointer rounded-xl border-[#e4e8e9] bg-white file:mr-3 file:rounded-lg file:border-0 file:bg-[#e6edf2] file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-[#405f73]"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowIcsDialog(false)}
+              className="cursor-pointer rounded-full border-[#e4e8e9]"
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <style jsx global>{`
+        .symptomsync-calendar {
+          min-width: 0;
+          color: #27333b;
+          font-family: inherit;
+        }
+
+        .symptomsync-calendar .rbc-calendar {
+          min-height: 590px;
+        }
+
+        .symptomsync-calendar .rbc-toolbar {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 22px;
+        }
+
+        .symptomsync-calendar .rbc-toolbar-label {
+          color: #27333b;
+          font-size: 17px;
+          font-weight: 650;
+          text-align: center;
+        }
+
+        .symptomsync-calendar .rbc-toolbar button {
+          border: 1px solid #e4e8e9;
+          border-radius: 999px;
+          background: #fff;
+          color: #587587;
+          font-size: 12px;
+          font-weight: 600;
+          padding: 7px 12px;
+          transition: background 150ms ease, border-color 150ms ease;
+        }
+
+        .symptomsync-calendar .rbc-toolbar button:hover {
+          border-color: #cbd8df;
+          background: #f1f5f7;
+          color: #405f73;
+        }
+
+        .symptomsync-calendar .rbc-toolbar button.rbc-active,
+        .symptomsync-calendar .rbc-toolbar button.rbc-active:hover {
+          border-color: #405f73;
+          background: #405f73;
+          color: #fff;
+          box-shadow: none;
+        }
+
+        .symptomsync-calendar .rbc-month-view,
+        .symptomsync-calendar .rbc-time-view,
+        .symptomsync-calendar .rbc-agenda-view {
+          overflow: hidden;
+          border: 1px solid #e8ecee;
+          border-radius: 12px;
+        }
+
+        .symptomsync-calendar .rbc-header {
+          border-bottom: 1px solid #e8ecee;
+          background: #fafbfb;
+          color: #69747b;
+          font-size: 11px;
+          font-weight: 650;
+          padding: 11px 4px;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+
+        .symptomsync-calendar .rbc-month-row {
+          border-top: 1px solid #edf0f1;
+        }
+
+        .symptomsync-calendar .rbc-day-bg {
+          border-left: 1px solid #edf0f1;
+        }
+
+        .symptomsync-calendar .rbc-off-range-bg {
+          background: #fafbfb;
+        }
+
+        .symptomsync-calendar .rbc-today {
+          background: #f1f5f7;
+        }
+
+        .symptomsync-calendar .rbc-date-cell {
+          color: #69747b;
+          font-size: 12px;
+          padding: 6px 7px;
+        }
+
+        .symptomsync-calendar .rbc-now .rbc-button-link {
+          color: #405f73;
+          font-weight: 750;
+        }
+
+        .symptomsync-calendar .rbc-show-more {
+          color: #587587;
+          font-size: 11px;
+          font-weight: 650;
+        }
+
+        .symptomsync-calendar .rbc-event {
+          border-radius: 7px;
+          padding: 3px 6px;
+        }
+
+        .symptomsync-calendar .rbc-event:focus {
+          outline: 2px solid #718b9b;
+          outline-offset: 1px;
+        }
+
+        .symptomsync-calendar .rbc-time-header-content,
+        .symptomsync-calendar .rbc-time-content,
+        .symptomsync-calendar .rbc-timeslot-group {
+          border-color: #edf0f1;
+        }
+
+        .symptomsync-calendar .rbc-time-gutter,
+        .symptomsync-calendar .rbc-label {
+          color: #899399;
+          font-size: 11px;
+        }
+
+        .symptomsync-calendar .rbc-current-time-indicator {
+          background-color: #718b9b;
+        }
+
+        .symptomsync-calendar .rbc-agenda-table {
+          border: 0;
+        }
+
+        .symptomsync-calendar .rbc-agenda-date-cell,
+        .symptomsync-calendar .rbc-agenda-time-cell {
+          color: #69747b;
+          font-size: 12px;
+        }
+
+        .symptomsync-calendar .rbc-agenda-event-cell {
+          color: #27333b;
+          font-size: 13px;
+        }
+
+        @media (max-width: 640px) {
+          .symptomsync-calendar .rbc-toolbar {
+            justify-content: center;
+          }
+
+          .symptomsync-calendar .rbc-toolbar-label {
+            order: -1;
+            width: 100%;
+            padding-bottom: 4px;
+          }
+
+          .symptomsync-calendar .rbc-toolbar .rbc-btn-group {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+          }
+
+          .symptomsync-calendar .rbc-toolbar button {
+            padding: 6px 9px;
+            font-size: 11px;
+          }
+
+          .symptomsync-calendar .rbc-date-cell {
+            padding: 4px 3px;
+            font-size: 11px;
+          }
+
+          .symptomsync-calendar .rbc-event {
+            padding: 2px 3px;
+            font-size: 10px;
+          }
+        }
+      `}</style>
     </>
   );
 }
