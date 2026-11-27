@@ -1,66 +1,47 @@
 import * as React from "react";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 
 interface DatePickerProps {
   value: Date | undefined;
-  onChange: (date: Date) => void;
+  onChange: (date: Date | undefined) => void;
   className?: string;
 }
 
-export function DatePicker({ value, onChange, className }: DatePickerProps) {
-  const [open, setOpen] = React.useState(false);
+export function DatePicker({
+  value,
+  onChange,
+  className,
+}: DatePickerProps) {
+  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const dateValue = event.target.value;
 
-  const formattedDate = value ? format(value, "PPP") : "Pick a date";
+    if (!dateValue) {
+      onChange(undefined);
+      return;
+    }
+
+    const [year, month, day] = dateValue.split("-").map(Number);
+    const selectedDate = new Date(year, month - 1, day);
+
+    if (!Number.isNaN(selectedDate.getTime())) {
+      onChange(selectedDate);
+    }
+  };
 
   return (
-    <Popover
-      open={open}
-      onOpenChange={(newState) => {
-        setOpen(newState);
-      }}
-    >
-      <PopoverTrigger asChild className="cursor-pointer">
-        <div>
-          <Button
-            type="button"
-            variant="outline"
-            className={cn(
-              "w-full justify-start text-left cursor-pointer",
-              !value && "text-muted-foreground",
-              className,
-            )}
-          >
-            <CalendarIcon className="mr-2 h-4 w-4" />
-            {value ? formattedDate : "Pick a date"}
-          </Button>
-        </div>
-      </PopoverTrigger>
-      <PopoverContent
-        side="bottom"
-        align="start"
-        className="w-auto p-0 z-50 rounded-md"
-      >
-        <Calendar
-          mode="single"
-          selected={value}
-          onSelect={(d) => {
-            if (d) {
-              onChange(d);
-              setOpen(false);
-            }
-          }}
-          className="rounded-md"
-        />
-      </PopoverContent>
-    </Popover>
+    <input
+      type="date"
+      value={value ? format(value, "yyyy-MM-dd") : ""}
+      onChange={handleChange}
+      aria-label="Select date"
+      className={cn(
+        "flex h-11 w-full cursor-pointer rounded-xl border border-[#dce4e8] bg-[#e6edf2] px-3 text-sm font-medium text-[#405f73] shadow-none outline-none transition-colors",
+        "hover:border-[#b9cbd5] hover:bg-[#dfe9ef]",
+        "focus-visible:border-[#718b9b] focus-visible:ring-2 focus-visible:ring-[#718b9b]/20",
+        "[color-scheme:light]",
+        className,
+      )}
+    />
   );
 }
