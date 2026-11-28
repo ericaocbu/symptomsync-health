@@ -1,5 +1,7 @@
+
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import "@/styles/globals.css";
+
 import type { AppProps } from "next/app";
 import { useRouter } from "next/router";
 import { useEffect, useState, useRef } from "react";
@@ -14,7 +16,8 @@ const queryClient = new QueryClient();
 
 export default function App({ Component, pageProps }: AppProps) {
   const router = useRouter();
-  // Wanna hide the nav bar on auth pages and landing page and 404
+
+  // Hide navigation on landing, authentication, and 404 pages.
   const authPaths = [
     "/",
     "/auth/signUp",
@@ -23,48 +26,50 @@ export default function App({ Component, pageProps }: AppProps) {
     "/auth/forgotPassword",
     "/auth/updatePassword",
   ];
+
   const hideNav = authPaths.includes(router.pathname);
 
   const [navExpanded, setNavExpanded] = useState<boolean>(true);
-  const [isMobile, setIsMobile] = useState<boolean>(false);
+  const [userId, setUserId] = useState<string | null>(null);
 
+  const broadcastChannelRef =
+    useRef<ReturnType<typeof supabase.channel> | null>(null);
+
+  // Restore the user's sidebar preference.
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const checkScreen = () => setIsMobile(window.innerWidth < 768);
-      checkScreen();
-      window.addEventListener("resize", checkScreen);
-      return () => window.removeEventListener("resize", checkScreen);
+    const storedPref = localStorage.getItem("navExpanded");
+
+    if (storedPref !== null) {
+      setNavExpanded(storedPref === "true");
     }
   }, []);
 
-  useEffect(() => {
-    const storedPref = localStorage.getItem("navExpanded");
-    if (storedPref !== null) setNavExpanded(storedPref === "true");
-  }, []);
-
+  // Persist the sidebar preference.
   useEffect(() => {
     localStorage.setItem("navExpanded", String(navExpanded));
   }, [navExpanded]);
 
-  // Push content to the right when nav is expanded. This is kinda a
-  // hacky way to do it, but it works
-  const marginLeft = isMobile ? "0" : navExpanded ? "16rem" : "5rem";
-  const [userId, setUserId] = useState<string | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const broadcastChannelRef = useRef<any>(null);
-
+  // Get the currently authenticated user.
   useEffect(() => {
     let isMounted = true;
+
     async function init() {
       const {
         data: { user },
+        error,
       } = await supabase.auth.getUser();
+
+      if (error) {
+        console.error("Unable to retrieve authenticated user:", error);
+        return;
+      }
+
       if (user && isMounted) {
         setUserId(user.id);
       }
     }
 
-    init();
+    void init();
 
     return () => {
       isMounted = false;
@@ -73,16 +78,8 @@ export default function App({ Component, pageProps }: AppProps) {
 
   /**
    * Supabase Realtime #3: Reminder notifications.
-   * This will be used to notify the user when a reminder is due.
-   * How it works: Supabase CRON is set up in Supbase Dashboard to
-   * call a function every second. This function will check if
-   * there are any reminders due and if so, it will insert
-   * a new row in the user_notifications table. This will
-   * trigger the realtime subscription in this file and the
-   * user will be notified via a toast notification, immediately
-   * after the row is inserted (i.e. when their reminder is due).
-   *
-   * Something I'm so proud of too lol :>
+   * When a reminder is due, a notification is inserted into
+   * user_notifications and displayed to the user through Sonner.
    */
   useEffect(() => {
     if (!userId) return;
@@ -102,79 +99,92 @@ export default function App({ Component, pageProps }: AppProps) {
             title: string;
             body: string;
           };
-          toast.info(title, { description: body });
+
+          toast.info(title, {
+            description: body,
+          });
         },
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      void supabase.removeChannel(channel);
     };
   }, [userId]);
 
   /**
-   * Supabase Realtime #2: In the above realtime functionality, we already
-   * created postgres changes for meds, appointments, and health logs. However,
-   * that will only update the UI if the user adds a new med, appointment, or log
-   * from another device. But we may also wanna broadcast a message to the user
-   * when a new med, appointment, or log is added from another device as well.
-   * This is where the broadcast channel comes in - it will broadcast a message
-   * to the user when a new med, appointment, or log is added from another device so
-   * that the user knows that something has changed in the UI and the reason
-   * for that change.
+   * Supabase Realtime #2: Universal broadcast notifications.
+   * Displays a toast when another device broadcasts a message.
    */
   useEffect(() => {
-    broadcastChannelRef.current = supabase.channel("universal-channel", {
-      config: { broadcast: { self: false } },
+    const channel = supabase.channel("universal-channel", {
+      config: {
+        broadcast: {
+          self: false,
+        },
+      },
     });
-    const channel = broadcastChannelRef.current;
+
+    broadcastChannelRef.current = channel;
+
     channel
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .on("broadcast", { event: "*" }, (payload: any) => {
-        if (payload?.payload?.message) {
-          toast.success(`Notification: ${payload.payload.message}`);
+      .on("broadcast", { event: "*" }, (payload) => {
+        const message = payload?.payload?.message;
+
+        if (typeof message === "string" && message.length > 0) {
+          toast.success(`Notification: ${message}`);
         }
       })
-      .subscribe((status: string) => {
+      .subscribe((status) => {
         console.log("Universal channel status:", status);
       });
+
     return () => {
-      supabase.removeChannel(channel);
+      void supabase.removeChannel(channel);
       broadcastChannelRef.current = null;
     };
   }, []);
 
-  if (hideNav) {
-    return (
+  // Sidebar width is handled responsively with CSS.
+  const marginLeft = navExpanded ? "16rem" : "5rem";
+
+  return (
+    <ThemeProvider
+      attribute="class"
+      defaultTheme="system"
+      enableSystem
+      disableTransitionOnChange
+    >
       <QueryClientProvider client={queryClient}>
-        <Component {...pageProps} />
+        {hideNav ? (
+          <Component {...pageProps} />
+        ) : (
+          <>
+            <NavBar
+              isExpanded={navExpanded}
+              setIsExpanded={setNavExpanded}
+              staticNav={false}
+            />
+
+            <main
+              className="
+                ml-0 transition-all duration-300
+                md:[margin-left:var(--sidebar-margin)]
+              "
+              style={
+                {
+                  "--sidebar-margin": marginLeft,
+                } as React.CSSProperties
+              }
+            >
+              <Component {...pageProps} />
+            </main>
+          </>
+        )}
+
         <Toaster position="bottom-right" richColors />
         <Analytics />
       </QueryClientProvider>
-    );
-  }
-
-  return (
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider
-        attribute="class"
-        defaultTheme="system"
-        enableSystem
-        disableTransitionOnChange
-      >
-        <div>
-          <NavBar
-            isExpanded={navExpanded}
-            setIsExpanded={setNavExpanded}
-            staticNav={false}
-          />
-          <main className="transition-all duration-300" style={{ marginLeft }}>
-            <Component {...pageProps} />
-          </main>
-          <Toaster position="bottom-right" richColors />
-          <Analytics />
-        </div>
-      </ThemeProvider>
-    </QueryClientProvider>
+    </ThemeProvider>
   );
 }
