@@ -1,18 +1,29 @@
 import React, { useState, useEffect, useRef } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import type { Components } from "react-markdown";
 import { useRouter } from "next/router";
 import Head from "next/head";
 import { motion, AnimatePresence } from "framer-motion";
-import { chatWithHealthAI } from "@/lib/aiChat";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Loader2, Send, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
+import {
+  Bot,
+  HeartPulse,
+  Loader2,
+  Send,
+  Trash2,
+  UserRound,
+  Sparkles,
+  MessageCircle,
+} from "lucide-react";
+
+import { supabase } from "@/lib/supabaseClient";
+import { chatWithHealthAI } from "@/lib/aiChat";
 import { getMedicationRemindersByUser } from "@/lib/medications";
 import { getAppointmentRemindersByUser } from "@/lib/appointmentReminders";
 import { getHealthLogsByUser } from "@/lib/healthLogs";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 
 type Role = "user" | "model";
@@ -22,190 +33,169 @@ type ChatMessage = {
   text: string;
 };
 
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { when: "beforeChildren", staggerChildren: 0.1 },
-  },
-};
-const slideInLeft = {
-  hidden: { opacity: 0, x: -50 },
-  visible: {
-    opacity: 1,
-    x: 0,
-    transition: { duration: 0.6, ease: "easeOut" },
-  },
-};
-const cardVariants = {
-  hidden: { opacity: 0, scale: 0.95 },
-  visible: {
-    opacity: 1,
-    scale: 1,
-    transition: { duration: 0.5, ease: "easeOut" },
-  },
-};
-const bubbleVariants = {
-  hidden: { opacity: 0, y: 10, scale: 0.95 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    scale: 1,
-    transition: { duration: 0.3, ease: "easeOut" },
-  },
-};
-
-// Custom markdown components - necessary for rendering the AI's responses
-const markdownComponents = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  h1: ({ children, ...props }: any) => (
+const markdownComponents: Components = {
+  h1: ({ children, ...props }) => (
     <h1
-      className="text-2xl font-bold my-4 border-b-2 border-gray-200 pb-2"
+      className="mb-4 mt-5 border-b border-border pb-2 text-2xl font-bold text-foreground first:mt-0"
       {...props}
     >
       {children}
     </h1>
   ),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  h2: ({ children, ...props }: any) => (
+  h2: ({ children, ...props }) => (
     <h2
-      className="text-xl font-bold my-3 border-b border-gray-200 pb-1"
+      className="mb-3 mt-5 border-b border-border pb-2 text-xl font-bold text-foreground first:mt-0"
       {...props}
     >
       {children}
     </h2>
   ),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  h3: ({ children, ...props }: any) => (
-    <h3 className="text-lg font-bold my-3" {...props}>
+  h3: ({ children, ...props }) => (
+    <h3
+      className="mb-2 mt-4 text-lg font-semibold text-foreground"
+      {...props}
+    >
       {children}
     </h3>
   ),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  h4: ({ children, ...props }: any) => (
-    <h4 className="text-base font-bold my-2" {...props}>
+  h4: ({ children, ...props }) => (
+    <h4
+      className="mb-2 mt-3 text-base font-semibold text-foreground"
+      {...props}
+    >
       {children}
     </h4>
   ),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  h5: ({ children, ...props }: any) => (
-    <h5 className="text-sm font-bold my-2" {...props}>
-      {children}
-    </h5>
-  ),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  h6: ({ children, ...props }: any) => (
-    <h6 className="text-xs font-bold my-2" {...props}>
-      {children}
-    </h6>
-  ),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  p: ({ children, ...props }: any) => (
-    <p className="mb-3 leading-relaxed" {...props}>
+  p: ({ children, ...props }) => (
+    <p
+      className="mb-3 text-sm leading-7 text-foreground last:mb-0"
+      {...props}
+    >
       {children}
     </p>
   ),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  blockquote: ({ children, ...props }: any) => (
+  ul: ({ children, ...props }) => (
+    <ul
+      className="mb-3 ml-5 list-disc space-y-1 text-sm leading-7 text-foreground"
+      {...props}
+    >
+      {children}
+    </ul>
+  ),
+  ol: ({ children, ...props }) => (
+    <ol
+      className="mb-3 ml-5 list-decimal space-y-1 text-sm leading-7 text-foreground"
+      {...props}
+    >
+      {children}
+    </ol>
+  ),
+  li: ({ children, ...props }) => (
+    <li className="pl-1" {...props}>
+      {children}
+    </li>
+  ),
+  strong: ({ children, ...props }) => (
+    <strong className="font-semibold text-foreground" {...props}>
+      {children}
+    </strong>
+  ),
+  blockquote: ({ children, ...props }) => (
     <blockquote
-      className="border-l-4 border-gray-300 pl-4 italic text-gray-700 my-3"
+      className="my-3 border-l-4 border-primary/50 pl-4 italic text-muted-foreground"
       {...props}
     >
       {children}
     </blockquote>
   ),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  hr: ({ ...props }: any) => (
-    <hr className="border-t border-gray-300 my-3" {...props} />
+  hr: (props) => <hr className="my-4 border-border" {...props} />,
+  a: ({ children, ...props }) => (
+    <a
+      className="text-primary underline underline-offset-4 hover:opacity-80"
+      target="_blank"
+      rel="noopener noreferrer"
+      {...props}
+    >
+      {children}
+    </a>
   ),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  code: ({ inline, children, ...props }: any) => {
-    if (inline) {
-      return (
-        <code
-          className="bg-gray-100 text-gray-800 px-1 py-0.5 rounded text-sm font-mono"
-          {...props}
-        >
-          {children}
-        </code>
-      );
-    }
-    return (
-      <pre
-        className="bg-gray-100 text-gray-800 p-2 rounded text-sm font-mono overflow-x-auto my-3"
-        {...props}
-      >
-        <code>{children}</code>
-      </pre>
-    );
-  },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  table: ({ children, ...props }: any) => (
-    <div className="overflow-x-auto my-3">
+  code: ({ children, className, ...props }) => (
+    <code
+      className={`rounded-md bg-muted px-1.5 py-1 font-mono text-xs text-foreground ${
+        className ?? ""
+      }`}
+      {...props}
+    >
+      {children}
+    </code>
+  ),
+  pre: ({ children, ...props }) => (
+    <pre
+      className="my-3 overflow-x-auto rounded-xl border border-border bg-muted p-4 text-sm text-foreground"
+      {...props}
+    >
+      {children}
+    </pre>
+  ),
+  table: ({ children, ...props }) => (
+    <div className="my-4 overflow-x-auto rounded-xl border border-border">
       <table
-        className="min-w-full border-collapse border border-gray-300 text-sm"
+        className="w-full border-collapse text-left text-sm"
         {...props}
       >
         {children}
       </table>
     </div>
   ),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  thead: ({ children, ...props }: any) => (
-    <thead className="bg-gray-100 border-b border-gray-300" {...props}>
+  thead: ({ children, ...props }) => (
+    <thead className="bg-muted text-foreground" {...props}>
       {children}
     </thead>
   ),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  tbody: ({ children, ...props }: any) => <tbody {...props}>{children}</tbody>,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  tr: ({ children, ...props }: any) => (
-    <tr className="border-b last:border-0" {...props}>
+  tbody: ({ children, ...props }) => (
+    <tbody className="divide-y divide-border" {...props}>
+      {children}
+    </tbody>
+  ),
+  tr: ({ children, ...props }) => (
+    <tr className="border-b border-border last:border-0" {...props}>
       {children}
     </tr>
   ),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  th: ({ children, ...props }: any) => (
+  th: ({ children, ...props }) => (
     <th
-      className="border border-gray-300 px-3 py-2 font-semibold text-left"
+      className="border-b border-border px-4 py-3 font-semibold text-foreground"
       {...props}
     >
       {children}
     </th>
   ),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  td: ({ children, ...props }: any) => (
-    <td className="border border-gray-300 px-3 py-2 align-top" {...props}>
+  td: ({ children, ...props }) => (
+    <td
+      className="border-b border-border px-4 py-3 align-top text-foreground"
+      {...props}
+    >
       {children}
     </td>
   ),
 };
 
-/**
- * (Unused helper retained for backward compatibility)
- * Function to get initial messages from local storage
- *
- * @returns Initial messages from local storage or an empty array
- */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const getInitialMessages = (): ChatMessage[] => {
-  if (typeof window !== "undefined") {
-    const stored = localStorage.getItem("symptomSyncChat");
-    if (stored) {
-      try {
-        return JSON.parse(stored);
-      } catch {
-        return [];
-      }
-    }
-  }
-  return [];
+const isChatMessageArray = (value: unknown): value is ChatMessage[] => {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (message) =>
+        message &&
+        (message.role === "user" || message.role === "model") &&
+        typeof message.text === "string",
+    )
+  );
 };
 
-// Been facing hydration issues for ages... So trying this workaround
-// to ensure the component only mounts on the client side
-// We don't need the entire chat to be server-rendered anyway...
-const ClientOnly: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+// Keeps the chat client-rendered to avoid local-storage hydration differences.
+const ClientOnly: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -220,101 +210,153 @@ const ClientOnly: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 export default function AIChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
+  const [loadedUserId, setLoadedUserId] = useState<string | null>(null);
   const [userInput, setUserInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const hasSentMessageRef = useRef(false);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const broadcastChannelRef = useRef<any>(null);
 
+  const broadcastChannelRef =
+    useRef<ReturnType<typeof supabase.channel> | null>(null);
+
+  // Authenticate the user.
   useEffect(() => {
+    let isMounted = true;
+
     async function checkUserAuth() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        router.push("/auth/login");
-      } else {
+      try {
+        const {
+          data: { user },
+          error,
+        } = await supabase.auth.getUser();
+
+        if (!isMounted) return;
+
+        if (error || !user) {
+          router.replace("/auth/login");
+          return;
+        }
+
         setUserId(user.id);
+      } catch (error) {
+        console.error("Authentication error:", error);
+
+        if (isMounted) {
+          router.replace("/auth/login");
+        }
       }
     }
+
     checkUserAuth();
+
+    return () => {
+      isMounted = false;
+    };
   }, [router]);
 
+  // Load the conversation belonging to the authenticated user.
   useEffect(() => {
     if (!userId) return;
-    const stored = localStorage.getItem(`symptomSyncChat-${userId}`);
-    if (stored) {
-      try {
-        setMessages(JSON.parse(stored));
-      } catch {
+
+    try {
+      const stored = localStorage.getItem(`symptomSyncChat-${userId}`);
+
+      if (stored) {
+        const parsed: unknown = JSON.parse(stored);
+        setMessages(isChatMessageArray(parsed) ? parsed : []);
+      } else {
         setMessages([]);
       }
-    } else {
+    } catch (error) {
+      console.error("Could not load saved conversation:", error);
       setMessages([]);
     }
+
+    setLoadedUserId(userId);
   }, [userId]);
 
+  // Save messages only after the correct user's conversation has loaded.
+  useEffect(() => {
+    if (!userId || loadedUserId !== userId) return;
+
+    localStorage.setItem(
+      `symptomSyncChat-${userId}`,
+      JSON.stringify(messages),
+    );
+  }, [messages, userId, loadedUserId]);
+
+  // Keep the latest message visible.
+  useEffect(() => {
+    if (messages.length === 0) return;
+
+    const timeout = window.setTimeout(() => {
+      scrollRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "end",
+      });
+    }, 100);
+
+    return () => window.clearTimeout(timeout);
+  }, [messages, loading]);
+
+  // Subscribe to user-specific broadcast notifications.
   useEffect(() => {
     if (!userId) return;
-    localStorage.setItem(`symptomSyncChat-${userId}`, JSON.stringify(messages));
-    if (hasSentMessageRef.current) {
-      scrollRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [messages, userId]);
 
-  useEffect(() => {
-    async function subscribeToUserChannel() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+    const channel = supabase.channel(`user-channel-${userId}`, {
+      config: { broadcast: { self: false } },
+    });
 
-      if (!user) {
-        router.push("/auth/login");
-        return;
-      }
+    broadcastChannelRef.current = channel;
 
-      const userChannelName = `user-channel-${user.id}`;
-      broadcastChannelRef.current = supabase.channel(userChannelName, {
-        config: { broadcast: { self: false } },
-      });
-      const channel = broadcastChannelRef.current;
+    channel
+      .on("broadcast", { event: "*" }, (payload) => {
+        const message = payload.payload?.message;
 
-      channel
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .on("broadcast", { event: "*" }, (payload: any) => {
+        if (typeof message === "string" && message.trim()) {
           toast.success(
-            `Notification: ${payload.payload.message.replace(/\./g, "")} from another device or tab.`,
+            `Notification: ${message.replace(/\./g, "")} from another device or tab.`,
           );
-        })
-        .subscribe((status: string) => {
-          console.log("User-specific channel status:", status);
-        });
+        }
+      })
+      .subscribe((status) => {
+        console.log("User-specific channel status:", status);
+      });
 
-      return () => {
-        supabase.removeChannel(channel);
-        broadcastChannelRef.current = null;
-      };
-    }
+    return () => {
+      void supabase.removeChannel(channel);
+      broadcastChannelRef.current = null;
+    };
+  }, [userId]);
 
-    subscribeToUserChannel();
-  }, [router]);
-
-  /**
-   * This function handles sending the user's input to the AI and receiving a response
-   *
-   * @returns The AI's response to the user's input
-   */
+  // Send a message and retrieve the user's health information for context.
   async function handleSend() {
-    if (!userInput.trim() || loading) return;
+    const messageText = userInput.trim();
+
+    if (!messageText || loading || !userId) return;
+
     setLoading(true);
+
+    const newUserMessage: ChatMessage = {
+      role: "user",
+      text: messageText,
+    };
+
+    const updatedMessages = [...messages, newUserMessage];
+
+    setMessages(updatedMessages);
+    setUserInput("");
 
     try {
       const {
         data: { user },
+        error,
       } = await supabase.auth.getUser();
-      if (!user) throw new Error("User not logged in");
+
+      if (error || !user || user.id !== userId) {
+        throw new Error("Your session could not be verified. Please log in again.");
+      }
 
       const [meds, appts, logs] = await Promise.all([
         getMedicationRemindersByUser(user.id),
@@ -322,273 +364,351 @@ export default function AIChatPage() {
         getHealthLogsByUser(user.id),
       ]);
 
-      let userDataSummary = `Appointments:\n`;
+      let userDataSummary = "Appointments:\n";
+
       if (appts.length === 0) {
-        userDataSummary += `- None\n`;
+        userDataSummary += "- None\n";
       } else {
-        appts.forEach((a) => {
-          const dateString = new Date(a.date).toLocaleString();
-          userDataSummary += `- ${a.appointment_name} on ${dateString}\n`;
+        appts.forEach((appointment) => {
+          const dateString = new Date(
+            appointment.date,
+          ).toLocaleString();
+
+          userDataSummary += `- ${appointment.appointment_name} on ${dateString}\n`;
         });
       }
-      userDataSummary += `\nMedications:\n`;
+
+      userDataSummary += "\nMedications:\n";
+
       if (meds.length === 0) {
-        userDataSummary += `- None\n`;
+        userDataSummary += "- None\n";
       } else {
-        meds.forEach((m) => {
-          userDataSummary += `- ${m.medication_name}, dosage: ${
-            m.dosage ?? "N/A"
+        meds.forEach((medication) => {
+          userDataSummary += `- ${medication.medication_name}, dosage: ${
+            medication.dosage ?? "N/A"
           }, next time: ${new Date(
-            m.reminder_time,
-          ).toLocaleString()}, recurrence: ${m.recurrence ?? "N/A"}\n`;
+            medication.reminder_time,
+          ).toLocaleString()}, recurrence: ${
+            medication.recurrence ?? "N/A"
+          }\n`;
         });
       }
-      userDataSummary += `\nRecent Health Logs:\n`;
+
+      userDataSummary += "\nRecent Health Logs:\n";
+
       if (logs.length === 0) {
-        userDataSummary += `- None\n`;
+        userDataSummary += "- None\n";
       } else {
-        const recent = logs.slice(-3);
-        recent.forEach((l) => {
-          userDataSummary += `- Symptom: ${l.symptom_type ?? "N/A"}, severity: ${
-            l.severity ?? 0
-          }, start: ${new Date(l.start_date).toLocaleString()}\n`;
+        logs.slice(-3).forEach((log) => {
+          userDataSummary += `- Symptom: ${
+            log.symptom_type ?? "N/A"
+          }, severity: ${log.severity ?? 0}, start: ${new Date(
+            log.start_date,
+          ).toLocaleString()}\n`;
         });
       }
 
-      const newUserMessage: ChatMessage = { role: "user", text: userInput };
-
-      const updatedMessages = [...messages, newUserMessage];
-      setMessages(updatedMessages);
-      hasSentMessageRef.current = true;
-
-      const newHistory = updatedMessages.map((m) => ({
-        role: m.role,
-        parts: [{ text: m.text }],
+      const newHistory = updatedMessages.map((message) => ({
+        role: message.role,
+        parts: [{ text: message.text }],
       }));
-      if (newHistory.length === 0 || newHistory[0].role !== "user") {
-        newHistory.splice(0, newHistory.length, {
-          role: "user",
-          parts: [{ text: userInput }],
-        });
-      }
 
       const aiResponse = await chatWithHealthAI(
         newHistory,
-        userInput,
+        messageText,
         undefined,
         userDataSummary,
       );
 
-      setMessages((prev) => [...prev, { role: "model", text: aiResponse }]);
-      setUserInput("");
-    } catch (err) {
-      console.error(err);
+      setMessages((previous) => [
+        ...previous,
+        { role: "model", text: aiResponse },
+      ]);
+    } catch (error) {
+      console.error("Chat error:", error);
+
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Something went wrong while sending your message. Please try again.",
+      );
     } finally {
       setLoading(false);
     }
   }
 
-  /**
-   * This function clears the chat messages in UI and local storage
-   */
-  const handleClear = () => {
+  // Clear the current user's conversation.
+  function handleClear() {
+    if (loading) return;
+
     setMessages([]);
+
     if (userId) {
       localStorage.removeItem(`symptomSyncChat-${userId}`);
     }
-    hasSentMessageRef.current = false;
-  };
 
-  /**
-   * Animated dots for loading state - like 1, 2, 3 dots...
-   *
-   * @returns Animated dots for loading state
-   */
-  const AnimatedDots: React.FC = () => {
-    const [dots, setDots] = useState("");
+    toast.success("Conversation cleared.");
+  }
 
-    useEffect(() => {
-      const interval = setInterval(() => {
-        setDots((prev) => (prev.length < 3 ? prev + "." : ""));
-      }, 500);
-      return () => clearInterval(interval);
-    }, []);
-
-    return <span>{dots}</span>;
-  };
-
-  /**
-   * Scroll to the bottom of the chat when new messages are added or on initial load
-   * since the messages are loaded from local storage
-   */
-  useEffect(() => {
-    if (messages.length > 0) {
-      const timeout = setTimeout(() => {
-        scrollRef.current?.scrollIntoView({ behavior: "auto" });
-      }, 50);
-      return () => clearTimeout(timeout);
-    }
-  }, [messages]);
+  function handleSuggestion(suggestion: string) {
+    setUserInput(suggestion);
+  }
 
   return (
     <>
       <Head>
-        <title>SymptomSync | AI Chat</title>
-        <meta name="description" content="Chat with SymptomSync Assistant" />
+        <title>SymptomSync | AI Health Assistant</title>
+        <meta
+          name="description"
+          content="Chat with your SymptomSync AI Health Assistant."
+        />
       </Head>
 
       <ClientOnly>
-        <motion.div
-          className="h-screen bg-background text-foreground p-4 sm:p-6 overflow-hidden"
-          variants={containerVariants}
-          initial="hidden"
-          animate="visible"
-        >
-          <style jsx global>{`
-            html {
-              scroll-behavior: smooth;
-            }
-
-            html,
-            body {
-              overscroll-behavior: none;
-            }
-          `}</style>
-          <div className="max-w-4xl mx-auto space-y-6 pt-2">
-            <div className="flex flex-col md:flex-row justify-between items-center mb-6">
-              <motion.div
-                variants={containerVariants}
-                initial="hidden"
-                animate="visible"
-                className="flex flex-col md:flex-row justify-between items-center"
-              >
-                <motion.div variants={slideInLeft}>
-                  <h1 className="text-3xl font-extrabold text-center md:text-left">
-                    Your Health Assistant 👨‍⚕️
-                  </h1>
-                  <motion.p
-                    variants={cardVariants}
-                    className="text-foreground mt-2 text-center md:text-left"
-                  >
-                    Ask our AI anything about your health. It’s like having a
-                    doctor in your pocket!
-                  </motion.p>
-                </motion.div>
-              </motion.div>
-            </div>
-
-            {messages.length > 0 && (
-              <div className="flex justify-end">
-                <Button
-                  variant="outline"
-                  className="flex items-center gap-2 hover:scale-102 transition-transform cursor-pointer"
-                  onClick={handleClear}
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Clear Conversation
-                </Button>
-              </div>
-            )}
-
-            <motion.div
-              variants={cardVariants}
-              initial="hidden"
-              animate="visible"
-            >
-              <Card className="p-4 sm:p-6 flex flex-col h-[70vh] rounded-xl shadow-2xl">
-                <div className="flex-1 overflow-y-auto mb-4">
-                  {messages.length === 0 && !loading && (
-                    <div className="text-center text-gray-500 my-8">
-                      <p>Type something to begin!</p>
-                    </div>
-                  )}
-
-                  <AnimatePresence initial={false}>
-                    {messages.map((msg, idx) => (
-                      <motion.div
-                        key={idx}
-                        variants={bubbleVariants}
-                        initial="hidden"
-                        animate="visible"
-                        exit={{ opacity: 0, y: -10 }}
-                        className={`mb-2 flex ${
-                          msg.role === "user" ? "justify-end" : "justify-start"
-                        }`}
-                      >
-                        <div
-                          className={`
-                            rounded-lg p-2 pb-0 shadow 
-                            ${
-                              msg.role === "user"
-                                ? "bg-primary text-primary-foreground"
-                                : "bg-muted text-foreground"
-                            }
-                            max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg
-                            overflow-x-auto hover:shadow-lg transition-shadow duration-300
-                          `}
-                        >
-                          <ReactMarkdown
-                            remarkPlugins={[remarkGfm]}
-                            components={markdownComponents}
-                          >
-                            {msg.text}
-                          </ReactMarkdown>
-                        </div>
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
-
-                  {loading && (
-                    <motion.div
-                      variants={bubbleVariants}
-                      initial="hidden"
-                      animate="visible"
-                      exit={{ opacity: 0, y: -10 }}
-                      className="flex justify-start mb-2"
-                    >
-                      <div className="bg-muted text-muted-foreground p-2 rounded-lg max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg shadow overflow-x-auto flex items-center gap-2">
-                        <Loader2 className="animate-spin w-5 h-5" />
-                        <span>
-                          Thinking
-                          <AnimatedDots />
-                        </span>
-                      </div>
-                    </motion.div>
-                  )}
-
-                  <div ref={scrollRef} />
+        <div className="flex min-h-screen flex-col bg-background px-4 py-6 text-foreground transition-colors duration-200 sm:px-6 lg:px-8">
+          <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col">
+            {/* Page header */}
+            <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-secondary text-primary">
+                  <HeartPulse className="h-6 w-6" />
                 </div>
 
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="Type your message…"
-                    className="flex-1"
-                    value={userInput}
-                    onChange={(e) => setUserInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        handleSend();
-                      }
-                    }}
-                  />
+                <div>
+                  <div className="mb-1 flex flex-wrap items-center gap-2">
+                    <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+                      AI Health Assistant
+                    </h1>
+
+                    <span className="inline-flex items-center gap-1 rounded-full border border-border bg-secondary/70 px-2.5 py-1 text-xs font-medium text-secondary-foreground">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      Personal assistant
+                    </span>
+                  </div>
+
+                  <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
+                    Ask questions, explore your health information, and get
+                    helpful guidance based on your SymptomSync records.
+                  </p>
+                </div>
+              </div>
+
+              {messages.length > 0 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleClear}
+                  disabled={loading}
+                  className="w-full cursor-pointer gap-2 border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed sm:w-auto"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Clear conversation
+                </Button>
+              )}
+            </div>
+
+            {/* Chat panel */}
+            <div className="flex min-h-[580px] flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+              {/* Chat panel header */}
+              <div className="flex items-center justify-between border-b border-border px-4 py-4 sm:px-6">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary text-primary">
+                    <Bot className="h-5 w-5" />
+                  </div>
+
+                  <div>
+                    <h2 className="text-sm font-semibold text-foreground">
+                      SymptomSync Assistant
+                    </h2>
+                    <p className="text-xs text-muted-foreground">
+                      Your health information companion
+                    </p>
+                  </div>
+                </div>
+
+                <div className="hidden items-center gap-2 rounded-full bg-muted px-3 py-1.5 text-xs text-muted-foreground sm:flex">
+                  <Sparkles className="h-3.5 w-3.5 text-primary" />
+                  AI-powered assistance
+                </div>
+              </div>
+
+              {/* Messages */}
+              <div className="flex-1 space-y-5 overflow-y-auto bg-background/40 px-4 py-6 sm:px-6">
+                {messages.length === 0 && !loading && (
+                  <div className="flex min-h-[390px] flex-col items-center justify-center px-2 py-8 text-center">
+                    <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-secondary text-primary">
+                      <MessageCircle className="h-8 w-8" />
+                    </div>
+
+                    <h3 className="mb-2 text-xl font-semibold text-foreground">
+                      How can I help you today?
+                    </h3>
+
+                    <p className="mb-7 max-w-md text-sm leading-6 text-muted-foreground">
+                      Ask me about your medications, appointments, health
+                      logs, or general health questions.
+                    </p>
+
+                    <div className="grid w-full max-w-2xl gap-3 sm:grid-cols-3">
+                      {[
+                        {
+                          title: "My medications",
+                          description: "Help me review my medications.",
+                          prompt:
+                            "Can you help me review my current medications?",
+                        },
+                        {
+                          title: "Upcoming appointments",
+                          description: "What appointments do I have coming up?",
+                          prompt:
+                            "Can you summarize my upcoming appointments?",
+                        },
+                        {
+                          title: "Health logs",
+                          description: "Help me understand my recent logs.",
+                          prompt:
+                            "Can you help me review my recent health logs?",
+                        },
+                      ].map((suggestion) => (
+                        <button
+                          key={suggestion.title}
+                          type="button"
+                          onClick={() =>
+                            handleSuggestion(suggestion.prompt)
+                          }
+                          className="group cursor-pointer rounded-xl border border-border bg-card p-4 text-left transition-all hover:border-primary/40 hover:bg-secondary/40"
+                        >
+                          <p className="mb-1 text-sm font-semibold text-foreground transition-colors group-hover:text-primary">
+                            {suggestion.title}
+                          </p>
+                          <p className="text-xs leading-5 text-muted-foreground">
+                            {suggestion.description}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <AnimatePresence initial={false}>
+                  {messages.map((message, index) => {
+                    const isUser = message.role === "user";
+
+                    return (
+                      <motion.div
+                        key={`${index}-${message.role}`}
+                        initial={{ opacity: 0, y: 12 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.2 }}
+                        className={`flex items-end gap-2.5 ${
+                          isUser ? "justify-end" : "justify-start"
+                        }`}
+                      >
+                        {!isUser && (
+                          <div className="mb-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-secondary text-primary">
+                            <Bot className="h-4 w-4" />
+                          </div>
+                        )}
+
+                        <div
+                          className={`max-w-[88%] overflow-hidden rounded-2xl px-4 py-3 shadow-sm sm:max-w-[80%] lg:max-w-[72%] ${
+                            isUser
+                              ? "rounded-br-md bg-primary text-primary-foreground"
+                              : "rounded-bl-md border border-border bg-card text-foreground"
+                          }`}
+                        >
+                          {isUser ? (
+                            <p className="whitespace-pre-wrap text-sm leading-7 text-primary-foreground">
+                              {message.text}
+                            </p>
+                          ) : (
+                            <div className="min-w-0 break-words">
+                              <ReactMarkdown
+                                remarkPlugins={[remarkGfm]}
+                                components={markdownComponents}
+                              >
+                                {message.text}
+                              </ReactMarkdown>
+                            </div>
+                          )}
+                        </div>
+
+                        {isUser && (
+                          <div className="mb-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                            <UserRound className="h-4 w-4" />
+                          </div>
+                        )}
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
+
+                {/* AI loading indicator */}
+                {loading && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex items-end gap-2.5"
+                  >
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-secondary text-primary">
+                      <Bot className="h-4 w-4" />
+                    </div>
+
+                    <div className="flex items-center gap-3 rounded-2xl rounded-bl-md border border-border bg-card px-4 py-3 shadow-sm">
+                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      <span className="text-sm text-muted-foreground">
+                        Thinking...
+                      </span>
+                    </div>
+                  </motion.div>
+                )}
+
+                <div ref={scrollRef} />
+              </div>
+
+              {/* Message input */}
+              <div className="border-t border-border bg-card p-4 sm:p-5">
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void handleSend();
+                  }}
+                  className="mx-auto flex w-full max-w-4xl items-center gap-2"
+                >
+                  <div className="relative flex-1">
+                    <Input
+                      value={userInput}
+                      onChange={(event) => setUserInput(event.target.value)}
+                      placeholder="Ask a question about your health..."
+                      disabled={loading || !userId}
+                      aria-label="Message the AI health assistant"
+                      className="h-12 rounded-xl border-input bg-background pr-4 text-foreground placeholder:text-muted-foreground focus-visible:ring-ring disabled:cursor-not-allowed"
+                    />
+                  </div>
+
                   <Button
-                    onClick={handleSend}
-                    disabled={loading}
-                    className="flex items-center gap-1 hover:scale-105 transition-transform cursor-pointer"
+                    type="submit"
+                    disabled={loading || !userInput.trim() || !userId}
+                    className="h-12 cursor-pointer gap-2 rounded-xl bg-primary px-4 text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 sm:px-5"
                   >
                     {loading ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <Send className="h-4 w-4" />
                     )}
-                    Send
+                    <span className="hidden sm:inline">Send</span>
                   </Button>
-                </div>
-              </Card>
-            </motion.div>
+                </form>
+
+                <p className="mt-3 text-center text-xs text-muted-foreground">
+                  AI responses are for informational purposes and are not a
+                  substitute for professional medical advice.
+                </p>
+              </div>
+            </div>
           </div>
-        </motion.div>
+        </div>
       </ClientOnly>
     </>
   );
